@@ -92,7 +92,7 @@ export default function AuthScreen() {
 
   return (
     <div className="auth-screen animate-fade-in">
-      <div className="auth-card glass">
+      <div className="auth-card">
         
         {/* Header */}
         <div className="auth-header" style={{ animationDelay: '0ms' }}>
@@ -210,33 +210,23 @@ export default function AuthScreen() {
       <style jsx>{`
         .auth-screen {
           flex: 1;
+          min-height: 0;
+          overflow-y: auto;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: center;
           padding: clamp(16px, 5vw, 24px);
-          min-height: 100dvh;
         }
 
         .auth-card {
           width: 100%;
           max-width: 380px;
+          /* center when there's room, scroll instead of clipping when short */
+          margin-block: auto;
           padding: clamp(24px, 6vw, 40px) clamp(16px, 5vw, 24px);
-          border-radius: var(--r-xl);
-          border: 1px solid rgba(255, 255, 255, 0.4);
-          box-shadow: var(--shadow-lg);
           display: flex;
           flex-direction: column;
           gap: clamp(20px, 5vw, 24px);
-        }
-
-        :root[data-theme="dark"] .auth-card {
-          border-color: var(--border-strong);
-        }
-        @media (prefers-color-scheme: dark) {
-          :root:not([data-theme="light"]) .auth-card {
-            border-color: var(--border-strong);
-          }
         }
 
         /* Header */
