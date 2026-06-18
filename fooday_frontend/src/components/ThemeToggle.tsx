@@ -50,8 +50,12 @@ export default function ThemeToggle({ variant = 'plain' }: ThemeToggleProps) {
       title={isDark ? 'Light mode' : 'Dark mode'}
     >
       <span className="icon-stack" data-dark={isDark}>
-        <Sun size={19} className="icon sun" />
-        <Moon size={19} className="icon moon" />
+        <span className="icon sun">
+          <Sun size={19} />
+        </span>
+        <span className="icon moon">
+          <Moon size={19} />
+        </span>
       </span>
 
       <style jsx>{`
@@ -60,8 +64,8 @@ export default function ThemeToggle({ variant = 'plain' }: ThemeToggleProps) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 42px;
-          height: 42px;
+          width: 44px;
+          height: 44px;
           border-radius: var(--r-full);
           border: 1px solid var(--border);
           background: var(--surface-2);
@@ -97,6 +101,9 @@ export default function ThemeToggle({ variant = 'plain' }: ThemeToggleProps) {
         .icon {
           position: absolute;
           inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
         }
         .sun {
