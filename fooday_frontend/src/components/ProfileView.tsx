@@ -2,10 +2,11 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { Settings, Mail, MapPin, Star, ChevronRight, Heart, Clock } from 'lucide-react';
+import { Mail, MapPin, Star, ChevronRight, Heart, Clock, LogOut, User as UserIcon } from 'lucide-react';
 import { FOOD_BY_NAME } from '@/data/foods';
 import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
+import { useAuth } from '@/hooks/useAuth';
 
 interface ProfileViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
@@ -13,41 +14,51 @@ interface ProfileViewProps {
 
 export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const favorites = useFavorites();
+  const { user, signOut } = useAuth();
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
 
   const favoriteItems = favorites
     .map((name) => FOOD_BY_NAME[name])
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
+  const isGuest = user?.is_anonymous || !user?.email;
+
+  const handleUpgrade = async () => {
+    // To upgrade, they just sign out of guest mode to go back to AuthScreen
+    await signOut();
+  };
+
   return (
     <div className="profile animate-fade-in">
       {/* Banner */}
       <div className="banner">
         <div className="banner-top">
-          <button className="banner-btn" aria-label="Settings">
-            <Settings size={19} />
+          <button className="banner-btn" aria-label="Sign Out" onClick={signOut}>
+            <LogOut size={19} />
           </button>
           <ThemeToggle variant="onPrimary" />
         </div>
 
         <div className="id-row">
           <div className="avatar-ring">
-            <Image
-              src="https://images.unsplash.com/photo-1633332755192-727a05c4013d?auto=format&fit=crop&w=300&q=80"
-              alt="Deny Smith"
-              width={78}
-              height={78}
-              className="avatar-img"
-            />
+            <div className="avatar-placeholder">
+              <UserIcon size={40} strokeWidth={1.5} />
+            </div>
           </div>
           <div className="id-text">
-            <h2 className="name">Deny Smith</h2>
+            <h2 className="name">{isGuest ? 'Guest User' : user?.email?.split('@')[0] || 'User'}</h2>
             <span className="detail">
-              <Mail size={13} /> deny.smith@fooday.app
+              <Mail size={13} /> {isGuest ? 'Not signed in' : user?.email}
             </span>
-            <span className="detail">
-              <MapPin size={13} /> San Francisco, CA
-            </span>
+            {isGuest ? (
+              <button className="upgrade-btn" onClick={handleUpgrade}>
+                Upgrade account
+              </button>
+            ) : (
+              <span className="detail">
+                <MapPin size={13} /> Fooday Member
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -157,7 +168,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
         }
         .banner {
           background: var(--grad-primary);
-          padding: 18px 22px 56px;
+          padding: clamp(14px, 4vw, 18px) clamp(16px, 5vw, 22px) 56px;
           border-bottom-left-radius: var(--r-xl);
           border-bottom-right-radius: var(--r-xl);
           position: relative;
@@ -184,8 +195,8 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           z-index: 1;
         }
         .banner-btn {
-          width: 42px;
-          height: 42px;
+          width: 44px;
+          height: 44px;
           border-radius: var(--r-full);
           border: 1px solid rgba(255, 255, 255, 0.28);
           background: rgba(255, 255, 255, 0.16);
@@ -202,18 +213,27 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
         .id-row {
           display: flex;
           align-items: center;
-          gap: 16px;
+          gap: clamp(12px, 4vw, 16px);
           position: relative;
           z-index: 1;
         }
         .avatar-ring {
-          width: 84px;
-          height: 84px;
+          width: clamp(72px, 20vw, 84px);
+          height: clamp(72px, 20vw, 84px);
           border-radius: var(--r-full);
           padding: 3px;
           background: rgba(255, 255, 255, 0.9);
           flex-shrink: 0;
           box-shadow: 0 10px 26px rgba(40, 40, 90, 0.28);
+        }
+        .avatar-placeholder {
+          width: 100%;
+          height: 100%;
+          border-radius: var(--r-full);
+          background: var(--surface-2);
+          display: grid;
+          place-items: center;
+          color: var(--text-faint);
         }
         .avatar-img {
           width: 100%;
@@ -227,27 +247,56 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           flex-direction: column;
           gap: 4px;
           color: #fff;
+          min-width: 0;
+          flex: 1;
         }
         .name {
-          font-size: 22px;
+          font-size: clamp(1.25rem, 5.5vw, 1.375rem);
           font-weight: 800;
           color: #fff;
           line-height: 1.1;
           margin-bottom: 2px;
+          text-transform: capitalize;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .detail {
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          font-size: 13px;
+          font-size: 0.8125rem;
           font-weight: 500;
           color: rgba(255, 255, 255, 0.92);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .upgrade-btn {
+          margin-top: 4px;
+          align-self: flex-start;
+          min-height: 36px;
+          padding: 0 12px;
+          background: rgba(255, 255, 255, 0.2);
+          border: 1px solid rgba(255, 255, 255, 0.4);
+          color: #fff;
+          font-size: 0.75rem;
+          font-weight: 700;
+          border-radius: var(--r-full);
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .upgrade-btn:hover {
+          background: rgba(255, 255, 255, 0.3);
         }
         .stats {
           display: flex;
           align-items: center;
           justify-content: space-around;
-          margin: -32px 20px 0;
+          margin: -32px clamp(12px, 4vw, 20px) 0;
           padding: 16px 12px;
           background: var(--surface);
           border: 1px solid var(--border);
@@ -262,15 +311,16 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           align-items: center;
           gap: 2px;
           flex: 1;
+          min-width: 0;
         }
         .stat-num {
           font-family: var(--font-display), sans-serif;
-          font-size: 19px;
+          font-size: clamp(1rem, 5vw, 1.1875rem);
           font-weight: 800;
           color: var(--text);
         }
         .stat-label {
-          font-size: 11.5px;
+          font-size: 0.71875rem;
           color: var(--text-soft);
           font-weight: 500;
         }
@@ -283,7 +333,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           position: sticky;
           top: 0;
           z-index: 10;
-          padding: 16px 20px 12px;
+          padding: 16px clamp(16px, 5vw, 20px) 12px;
         }
         .segment {
           position: relative;
@@ -312,10 +362,10 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           align-items: center;
           justify-content: center;
           gap: 6px;
-          padding: 9px 0;
+          min-height: 40px;
           background: none;
           border: none;
-          font-size: 14px;
+          font-size: 0.875rem;
           font-weight: 700;
           color: var(--text-soft);
           cursor: pointer;
@@ -325,7 +375,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           color: var(--primary-strong);
         }
         .panel {
-          padding: 6px 20px 0;
+          padding: 6px clamp(16px, 5vw, 20px) 0;
         }
         .fav-list {
           display: flex;
@@ -369,7 +419,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           gap: 2px;
         }
         .fav-name {
-          font-size: 15px;
+          font-size: 0.9375rem;
           font-weight: 700;
           color: var(--text);
           white-space: nowrap;
@@ -377,14 +427,17 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           text-overflow: ellipsis;
         }
         .fav-place {
-          font-size: 12.5px;
+          font-size: 0.78125rem;
           color: var(--text-soft);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .fav-rating {
           display: inline-flex;
           align-items: center;
           gap: 4px;
-          font-size: 12.5px;
+          font-size: 0.78125rem;
           font-weight: 700;
           color: var(--text);
           margin-top: 2px;
@@ -416,12 +469,12 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           margin-bottom: 14px;
         }
         .ph-title {
-          font-size: 16px;
+          font-size: 1rem;
           font-weight: 700;
           color: var(--text);
         }
         .ph-sub {
-          font-size: 13.5px;
+          font-size: 0.84375rem;
           color: var(--text-soft);
           margin-top: 5px;
           max-width: 250px;

@@ -163,7 +163,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
 
       <style jsx>{`
         .home {
-          padding: 26px 20px 32px;
+          padding: clamp(16px, 5vw, 26px) clamp(16px, 5vw, 20px) 32px;
         }
         .home-header {
           display: flex;
@@ -175,13 +175,13 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           display: inline-flex;
           align-items: center;
           gap: 5px;
-          font-size: 12px;
+          font-size: 0.75rem;
           font-weight: 600;
           color: var(--primary-strong);
           margin-bottom: 4px;
         }
         .home-title {
-          font-size: 30px;
+          font-size: clamp(24px, 7.5vw, 30px);
           font-weight: 800;
           color: var(--text);
           line-height: 1.05;
@@ -196,8 +196,8 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 42px;
-          height: 42px;
+          width: 44px;
+          height: 44px;
           border-radius: var(--r-full);
           border: 1px solid var(--border);
           background: var(--surface-2);
@@ -216,8 +216,8 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         }
         .notif-dot {
           position: absolute;
-          top: 9px;
-          right: 10px;
+          top: 10px;
+          right: 11px;
           width: 8px;
           height: 8px;
           border-radius: var(--r-full);
@@ -228,7 +228,8 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 13px 16px;
+          padding: 0 16px;
+          min-height: 48px;
           border-radius: var(--r-full);
           border: 1px solid var(--border-strong);
           margin-bottom: 20px;
@@ -248,8 +249,10 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           border: none;
           background: none;
           outline: none;
-          font-size: 15px;
+          font-size: 0.9375rem;
           color: var(--text);
+          min-width: 0;
+          height: 100%;
         }
         .search-input::placeholder {
           color: var(--text-faint);
@@ -258,10 +261,10 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           border: none;
           background: var(--surface-3);
           color: var(--text-soft);
-          width: 22px;
-          height: 22px;
+          width: 28px;
+          height: 28px;
           border-radius: var(--r-full);
-          font-size: 11px;
+          font-size: 0.75rem;
           cursor: pointer;
           display: grid;
           place-items: center;
@@ -284,12 +287,16 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         }
         .chip {
           flex-shrink: 0;
-          padding: 9px 20px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 44px;
+          padding: 0 20px;
           border-radius: var(--r-full);
           border: 1px solid var(--border);
           background: var(--surface-2);
           color: var(--text-soft);
-          font-size: 14px;
+          font-size: 0.875rem;
           font-weight: 600;
           cursor: pointer;
           white-space: nowrap;
@@ -315,24 +322,19 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           margin-bottom: 14px;
         }
         .section-title {
-          font-size: 18px;
+          font-size: clamp(16px, 4.5vw, 18px);
           font-weight: 700;
           color: var(--text);
         }
         .section-count {
-          font-size: 13px;
+          font-size: 0.8125rem;
           color: var(--text-faint);
           font-weight: 500;
         }
         .grid {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 16px;
-        }
-        @media (min-width: 460px) {
-          .grid {
-            gap: 18px;
-          }
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: clamp(12px, 3.5vw, 18px);
         }
         .card {
           background: var(--surface);
@@ -344,9 +346,11 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           animation: fadeInUp 0.5s var(--ease-out) both;
           transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
             border-color var(--dur) var(--ease);
+          display: flex;
+          flex-direction: column;
         }
         .card:hover {
-          transform: translateY(-6px);
+          transform: translateY(-4px);
           box-shadow: var(--shadow-lg);
           border-color: var(--primary-soft-2);
         }
@@ -368,22 +372,26 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         }
         .card-tag {
           position: absolute;
-          top: 10px;
-          left: 10px;
-          font-size: 10.5px;
+          top: 8px;
+          left: 8px;
+          font-size: 0.65rem;
           font-weight: 700;
           letter-spacing: 0.02em;
           color: var(--text);
-          padding: 4px 9px;
+          padding: 4px 8px;
           border-radius: var(--r-full);
           border: 1px solid rgba(255, 255, 255, 0.5);
+          white-space: nowrap;
+          max-width: calc(100% - 60px);
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .fav {
           position: absolute;
-          top: 9px;
-          right: 9px;
-          width: 32px;
-          height: 32px;
+          top: 6px;
+          right: 6px;
+          width: 44px;
+          height: 44px;
           border-radius: var(--r-full);
           border: none;
           background: var(--glass-strong);
@@ -405,10 +413,13 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           animation: heartPop 0.4s var(--ease);
         }
         .card-body {
-          padding: 13px 14px 15px;
+          padding: clamp(10px, 3vw, 14px) clamp(10px, 3vw, 14px) clamp(12px, 3.5vw, 15px);
+          flex: 1;
+          display: flex;
+          flex-direction: column;
         }
         .card-name {
-          font-size: 15px;
+          font-size: clamp(0.875rem, 3.5vw, 0.9375rem);
           font-weight: 700;
           color: var(--text);
           white-space: nowrap;
@@ -416,7 +427,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           text-overflow: ellipsis;
         }
         .card-place {
-          font-size: 12.5px;
+          font-size: 0.78125rem;
           color: var(--text-soft);
           margin-top: 2px;
           white-space: nowrap;
@@ -427,30 +438,39 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-top: 11px;
+          margin-top: auto;
+          padding-top: 10px;
+          gap: 6px;
         }
         .rating {
           display: inline-flex;
           align-items: center;
           gap: 4px;
-          font-size: 13px;
+          font-size: 0.8125rem;
           font-weight: 700;
           color: var(--text);
+          flex-shrink: 0;
         }
         .ask-ai {
           display: inline-flex;
           align-items: center;
+          justify-content: center;
           gap: 4px;
-          font-size: 11.5px;
+          font-size: 0.71875rem;
           font-weight: 700;
           color: var(--primary-strong);
           background: var(--primary-soft);
           border: 1px solid transparent;
-          padding: 5px 11px;
+          min-height: 32px;
+          padding: 0 10px;
           border-radius: var(--r-full);
           cursor: pointer;
           transition: background var(--dur-fast) var(--ease),
             color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+          white-space: nowrap;
+          flex-shrink: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .ask-ai:hover {
           background: var(--grad-primary);
@@ -465,19 +485,20 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           padding: 56px 20px;
         }
         .empty-emoji {
-          font-size: 40px;
+          font-size: 2.5rem;
           margin-bottom: 12px;
         }
         .empty-title {
-          font-size: 16px;
+          font-size: 1rem;
           font-weight: 700;
           color: var(--text);
         }
         .empty-sub {
-          font-size: 13.5px;
+          font-size: 0.84375rem;
           color: var(--text-soft);
           margin-top: 4px;
         }
+
       `}</style>
     </div>
   );

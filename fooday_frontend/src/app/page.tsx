@@ -1,22 +1,60 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Home, Sparkles, User } from 'lucide-react';
+import { Home, Sparkles, User as UserIcon } from 'lucide-react';
 import HomeView from '@/components/HomeView';
 import ChatView from '@/components/ChatView';
 import ProfileView from '@/components/ProfileView';
+import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import AuthScreen from '@/components/AuthScreen';
 
 type TabType = 'home' | 'chat' | 'profile';
 
 const TABS: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'chat', label: 'AI Chat', icon: Sparkles },
-  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'profile', label: 'Profile', icon: UserIcon },
 ];
 
-export default function App() {
+function AppContent() {
+  const { session, loading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [chatQuery, setChatQuery] = useState<string>('');
+
+  if (loading) {
+    return (
+      <main className="app-shell" style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <div className="splash-logo animate-pulse">
+          <Sparkles size={36} color="var(--primary-contrast)" />
+        </div>
+        <style jsx>{`
+          .splash-logo {
+            width: 80px;
+            height: 80px;
+            border-radius: var(--r-xl);
+            background: var(--grad-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--shadow-primary);
+            animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+          }
+          @keyframes pulseRing {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(0.95); opacity: 0.8; }
+          }
+        `}</style>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main className="app-shell">
+        <AuthScreen />
+      </main>
+    );
+  }
 
   const handleNavigateToChat = (query?: string) => {
     if (query) setChatQuery(query);
@@ -26,7 +64,7 @@ export default function App() {
   const activeIndex = TABS.findIndex((t) => t.id === activeTab);
 
   return (
-    <main className="app-shell">
+    <main className="app-shell animate-fade-in">
       <div className="app-content" key={activeTab}>
         {activeTab === 'home' && <HomeView onNavigateToChat={handleNavigateToChat} />}
         {activeTab === 'chat' && (
@@ -121,5 +159,13 @@ export default function App() {
         `}</style>
       </nav>
     </main>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

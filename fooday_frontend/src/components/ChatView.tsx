@@ -187,9 +187,10 @@ export default function ChatView({
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 15px 20px;
+          padding: clamp(12px, 3vw, 15px) clamp(16px, 5vw, 20px);
           border-bottom: 1px solid var(--border);
           z-index: 5;
+          flex-shrink: 0;
         }
         .avatar {
           position: relative;
@@ -213,7 +214,7 @@ export default function ChatView({
           animation: pulseRing 2.4s infinite;
         }
         .bot-name {
-          font-size: 16.5px;
+          font-size: 1.03125rem;
           font-weight: 700;
           color: var(--text);
           line-height: 1.2;
@@ -222,7 +223,7 @@ export default function ChatView({
           display: inline-flex;
           align-items: center;
           gap: 5px;
-          font-size: 12.5px;
+          font-size: 0.78125rem;
           color: var(--text-soft);
         }
         .status-dot {
@@ -235,7 +236,7 @@ export default function ChatView({
           flex: 1;
           min-height: 0;
           overflow-y: auto;
-          padding: 22px 18px;
+          padding: 22px clamp(14px, 4vw, 18px);
           display: flex;
           flex-direction: column;
           gap: 16px;
@@ -244,7 +245,7 @@ export default function ChatView({
         .row {
           display: flex;
           flex-direction: column;
-          max-width: 84%;
+          max-width: 88%;
           animation: bubbleIn 0.4s var(--ease-out) both;
         }
         .row.user {
@@ -257,7 +258,7 @@ export default function ChatView({
         }
         .bubble {
           padding: 12px 16px;
-          font-size: 14.5px;
+          font-size: 0.9375rem;
           line-height: 1.5;
           border-radius: 20px;
         }
@@ -276,9 +277,10 @@ export default function ChatView({
         }
         .text {
           white-space: pre-wrap;
+          word-break: break-word;
         }
         .time {
-          font-size: 10.5px;
+          font-size: 0.6875rem;
           color: var(--text-faint);
           margin-top: 6px;
           padding: 0 6px;
@@ -292,12 +294,16 @@ export default function ChatView({
           border-top: 1px dashed var(--border-strong);
         }
         .chip {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           background: var(--primary-soft);
           color: var(--primary-strong);
           border: 1px solid transparent;
-          padding: 7px 13px;
+          min-height: 44px;
+          padding: 0 16px;
           border-radius: var(--r-full);
-          font-size: 12.5px;
+          font-size: 0.8125rem;
           font-weight: 600;
           cursor: pointer;
           transition: transform var(--dur-fast) var(--ease),
@@ -336,14 +342,15 @@ export default function ChatView({
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+          padding: 12px clamp(12px, 4vw, 16px) calc(12px + env(safe-area-inset-bottom, 0px));
           border-top: 1px solid var(--border);
           z-index: 5;
+          flex-shrink: 0;
         }
         .attach {
           flex-shrink: 0;
-          width: 40px;
-          height: 40px;
+          width: 44px;
+          height: 44px;
           border-radius: var(--r-full);
           border: 1px solid var(--border);
           background: var(--surface-2);
@@ -360,14 +367,15 @@ export default function ChatView({
         }
         .input {
           flex: 1;
-          height: 44px;
+          height: 48px;
           padding: 0 18px;
           border-radius: var(--r-full);
           border: 1px solid var(--border-strong);
           background: var(--surface-2);
           color: var(--text);
-          font-size: 14.5px;
+          font-size: 1rem;
           outline: none;
+          min-width: 0;
           transition: border-color var(--dur-fast) var(--ease),
             box-shadow var(--dur-fast) var(--ease);
         }
