@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 import uvicorn
 from app.api import router as chat_router
-# 1. Import thêm cái này
-from fastapi.middleware.cors import CORSMiddleware 
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="What To Eat Today API",
-    # ...
 )
 
 # 2. Thêm đoạn cấu hình CORS này vào (Ngay dưới dòng khai báo app = FastAPI)
