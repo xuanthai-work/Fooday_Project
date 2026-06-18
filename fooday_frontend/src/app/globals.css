@@ -1,0 +1,322 @@
+/* =========================================================
+   Fooday — Premium Design System
+   Light-first theme with system + manual dark mode.
+   Fonts (--font-display: Outfit, --font-sans: Inter) are
+   injected by next/font on <html>; consumed below.
+   ========================================================= */
+
+:root {
+  /* Brand */
+  --primary: #8E97FD;
+  --primary-strong: #6E78F0;
+  --primary-deep: #5A63D8;
+  --primary-soft: rgba(142, 151, 253, 0.12);
+  --primary-soft-2: rgba(142, 151, 253, 0.20);
+  --primary-contrast: #ffffff;
+  --grad-primary: linear-gradient(135deg, #9AA0FF 0%, #8E97FD 45%, #B7A6FF 100%);
+  --grad-primary-soft: linear-gradient(135deg, #EEF0FF 0%, #F2EEFF 100%);
+
+  /* Surfaces */
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-2: #F6F6F6;
+  --surface-3: #EFEFF4;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-strong: rgba(255, 255, 255, 0.86);
+
+  /* Page backdrop (area outside the centered frame) */
+  --page-1: #ECEDF5;
+  --page-2: #E7E6F2;
+  --page-glow: rgba(142, 151, 253, 0.30);
+
+  /* Text */
+  --text: #1A1A1A;
+  --text-soft: #757575;
+  --text-faint: #ADADB8;
+
+  /* Lines & feedback colors */
+  --border: #ECECF1;
+  --border-strong: #E0E0E8;
+  --star: #F5A623;
+  --heart: #FF5A7E;
+  --online: #22C55E;
+
+  /* Elevation */
+  --shadow-sm: 0 2px 8px rgba(24, 24, 40, 0.06);
+  --shadow-md: 0 10px 28px rgba(24, 24, 40, 0.08);
+  --shadow-lg: 0 18px 44px rgba(24, 24, 40, 0.14);
+  --shadow-nav: 0 -8px 30px rgba(24, 24, 40, 0.06);
+  --shadow-frame: 0 40px 90px -30px rgba(40, 40, 80, 0.40), 0 12px 40px -12px rgba(40, 40, 80, 0.20);
+  --shadow-primary: 0 12px 26px -8px rgba(110, 120, 240, 0.55);
+
+  /* Focus */
+  --ring: rgba(142, 151, 253, 0.45);
+
+  /* Radii */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 30px;
+  --r-full: 9999px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 0.18s;
+  --dur: 0.32s;
+  --dur-slow: 0.5s;
+
+  color-scheme: light;
+}
+
+/* ---- Dark theme tokens (explicit toggle) ---- */
+:root[data-theme="dark"] {
+  --primary: #9BA3FF;
+  --primary-strong: #8E97FD;
+  --primary-deep: #6E78F0;
+  --primary-soft: rgba(142, 151, 253, 0.16);
+  --primary-soft-2: rgba(142, 151, 253, 0.26);
+  --grad-primary: linear-gradient(135deg, #7C86FF 0%, #8E97FD 50%, #A78BFA 100%);
+  --grad-primary-soft: linear-gradient(135deg, #20223A 0%, #262446 100%);
+
+  --bg: #0E1020;
+  --surface: #171A2E;
+  --surface-2: #1E2138;
+  --surface-3: #262A45;
+  --glass: rgba(23, 26, 46, 0.66);
+  --glass-strong: rgba(23, 26, 46, 0.86);
+
+  --page-1: #070812;
+  --page-2: #0C0E1C;
+  --page-glow: rgba(142, 151, 253, 0.22);
+
+  --text: #F4F5FB;
+  --text-soft: #9CA0B8;
+  --text-faint: #686C85;
+
+  --border: #2A2E48;
+  --border-strong: #343959;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.55);
+  --shadow-nav: 0 -8px 30px rgba(0, 0, 0, 0.35);
+  --shadow-frame: 0 40px 90px -30px rgba(0, 0, 0, 0.7);
+  --shadow-primary: 0 12px 26px -8px rgba(110, 120, 240, 0.5);
+
+  --ring: rgba(155, 163, 255, 0.5);
+  color-scheme: dark;
+}
+
+/* ---- System dark (only when user hasn't forced light) ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --primary: #9BA3FF;
+    --primary-strong: #8E97FD;
+    --primary-deep: #6E78F0;
+    --primary-soft: rgba(142, 151, 253, 0.16);
+    --primary-soft-2: rgba(142, 151, 253, 0.26);
+    --grad-primary: linear-gradient(135deg, #7C86FF 0%, #8E97FD 50%, #A78BFA 100%);
+    --grad-primary-soft: linear-gradient(135deg, #20223A 0%, #262446 100%);
+
+    --bg: #0E1020;
+    --surface: #171A2E;
+    --surface-2: #1E2138;
+    --surface-3: #262A45;
+    --glass: rgba(23, 26, 46, 0.66);
+    --glass-strong: rgba(23, 26, 46, 0.86);
+
+    --page-1: #070812;
+    --page-2: #0C0E1C;
+    --page-glow: rgba(142, 151, 253, 0.22);
+
+    --text: #F4F5FB;
+    --text-soft: #9CA0B8;
+    --text-faint: #686C85;
+
+    --border: #2A2E48;
+    --border-strong: #343959;
+
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.55);
+    --shadow-nav: 0 -8px 30px rgba(0, 0, 0, 0.35);
+    --shadow-frame: 0 40px 90px -30px rgba(0, 0, 0, 0.7);
+    --shadow-primary: 0 12px 26px -8px rgba(110, 120, 240, 0.5);
+
+    --ring: rgba(155, 163, 255, 0.5);
+    color-scheme: dark;
+  }
+}
+
+/* ---- Reset ---- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(900px 500px at 50% -8%, var(--page-glow), transparent 60%),
+    linear-gradient(160deg, var(--page-1) 0%, var(--page-2) 100%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+@media (min-width: 640px) {
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 20px;
+  }
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display), var(--font-sans), sans-serif;
+  letter-spacing: -0.02em;
+}
+
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--primary-soft-2);
+  color: var(--text);
+}
+
+/* ---- Scrollbars ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+/* =========================================================
+   App frame — the centered, floating mobile surface
+   ========================================================= */
+.app-shell {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+  transition: background-color var(--dur) var(--ease);
+}
+
+@media (min-width: 640px) {
+  .app-shell {
+    height: min(100dvh - 56px, 940px);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-frame);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+  }
+  :root[data-theme="dark"] .app-shell {
+    border-color: rgba(255, 255, 255, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .app-shell {
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+  }
+}
+
+.app-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Glass utility */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* =========================================================
+   Animations
+   ========================================================= */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes popIn {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes heartPop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.4); }
+  60% { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.animate-fade-in {
+  animation: fadeInUp var(--dur) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
