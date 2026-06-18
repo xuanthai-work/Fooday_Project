@@ -23,7 +23,7 @@ function AppContent() {
 
   if (loading) {
     return (
-      <main className="app-shell" style={{ alignItems: 'center', justifyContent: 'center' }}>
+      <main className="auth-shell" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <div className="splash-logo animate-pulse">
           <Sparkles size={36} color="var(--primary-contrast)" />
         </div>
@@ -50,7 +50,7 @@ function AppContent() {
 
   if (!session) {
     return (
-      <main className="app-shell">
+      <main className="auth-shell">
         <AuthScreen />
       </main>
     );

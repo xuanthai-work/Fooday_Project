@@ -348,6 +348,16 @@ button {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Auth / splash: full-viewport centering on the page backdrop (no app frame) */
+.auth-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  z-index: 1;
+}
+
 /* Glass utility */
 .glass {
   background: var(--glass);

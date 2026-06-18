@@ -220,13 +220,17 @@ export default function AuthScreen() {
 
         .auth-card {
           width: 100%;
-          max-width: 380px;
+          max-width: 420px;
           /* center when there's room, scroll instead of clipping when short */
           margin-block: auto;
-          padding: clamp(24px, 6vw, 40px) clamp(16px, 5vw, 24px);
+          padding: clamp(28px, 6vw, 40px) clamp(22px, 5vw, 32px);
           display: flex;
           flex-direction: column;
           gap: clamp(20px, 5vw, 24px);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-xl);
+          box-shadow: var(--shadow-lg);
         }
 
         /* Header */
