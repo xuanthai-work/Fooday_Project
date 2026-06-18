@@ -109,7 +109,9 @@ export default function AuthScreen() {
           <div className="input-group">
             <label htmlFor="email">Email</label>
             <div className="input-wrapper">
-              <Mail className="input-icon" size={18} />
+              <span className="input-icon">
+                <Mail size={18} />
+              </span>
               <input
                 id="email"
                 type="email"
@@ -125,7 +127,9 @@ export default function AuthScreen() {
             <div className="input-group">
               <label htmlFor="password">Password</label>
               <div className="input-wrapper">
-                <Lock className="input-icon" size={18} />
+                <span className="input-icon">
+                  <Lock size={18} />
+                </span>
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
@@ -302,6 +306,9 @@ export default function AuthScreen() {
           left: 14px;
           color: var(--text-faint);
           pointer-events: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .input-wrapper input {
