@@ -166,6 +166,13 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
         .profile {
           padding-bottom: 28px;
         }
+        /* Desktop: keep the profile a comfortable centered column */
+        @media (min-width: 1024px) {
+          div.profile {
+            max-width: 760px;
+            margin-inline: auto;
+          }
+        }
         .banner {
           background: var(--grad-primary);
           padding: clamp(14px, 4vw, 18px) clamp(16px, 5vw, 22px) 56px;

@@ -64,7 +64,7 @@ function AppContent() {
   const activeIndex = TABS.findIndex((t) => t.id === activeTab);
 
   return (
-    <main className="app-shell animate-fade-in">
+    <main className="app-shell app-shell--app animate-fade-in">
       <div className="app-content" key={activeTab}>
         {activeTab === 'home' && <HomeView onNavigateToChat={handleNavigateToChat} />}
         {activeTab === 'chat' && (
@@ -78,11 +78,17 @@ function AppContent() {
         )}
       </div>
 
-      {/* Sticky bottom navigation */}
+      {/* Navigation — bottom bar on mobile, left sidebar on desktop */}
       <nav className="bottom-nav glass" aria-label="Primary">
+        <div className="nav-brand" aria-hidden="true">
+          <span className="nav-brand-badge">
+            <Sparkles size={18} />
+          </span>
+          <span className="nav-brand-text">Fooday</span>
+        </div>
         <span
           className="nav-indicator"
-          style={{ transform: `translateX(${activeIndex * 100}%)` }}
+          style={{ ['--i' as string]: activeIndex } as React.CSSProperties}
           aria-hidden="true"
         />
         {TABS.map(({ id, label, icon: Icon }) => (
@@ -108,6 +114,9 @@ function AppContent() {
             box-shadow: var(--shadow-nav);
             z-index: 30;
           }
+          .nav-brand {
+            display: none;
+          }
           .nav-indicator {
             position: absolute;
             top: 8px;
@@ -116,6 +125,7 @@ function AppContent() {
             height: 52px;
             border-radius: var(--r-md);
             background: var(--primary-soft);
+            transform: translateX(calc(var(--i, 0) * 100%));
             transition: transform var(--dur) var(--ease);
             z-index: 0;
           }

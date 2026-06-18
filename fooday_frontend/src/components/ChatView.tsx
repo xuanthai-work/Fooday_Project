@@ -183,6 +183,15 @@ export default function ChatView({
           flex-direction: column;
           height: 100%;
         }
+        /* Desktop: center the conversation column in the wide content area */
+        @media (min-width: 1024px) {
+          .chat .messages,
+          .chat .composer {
+            max-width: 860px;
+            margin-inline: auto;
+            width: 100%;
+          }
+        }
         .chat-header {
           display: flex;
           align-items: center;
