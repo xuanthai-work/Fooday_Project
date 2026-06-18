@@ -30,6 +30,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
 
   return (
     <div className="profile animate-fade-in">
+      <div className="profile-aside">
       {/* Banner */}
       <div className="banner">
         <div className="banner-top">
@@ -80,8 +81,10 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           <span className="stat-label">Points</span>
         </div>
       </div>
+      </div>
 
       {/* Segmented control */}
+      <div className="profile-main">
       <div className="segment-wrap glass">
         <div className="segment">
           <span
@@ -161,17 +164,16 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           </div>
         )}
       </div>
+      </div>
 
       <style jsx>{`
         .profile {
           padding-bottom: 28px;
         }
-        /* Desktop: keep the profile a comfortable centered column */
-        @media (min-width: 1024px) {
-          div.profile {
-            max-width: 760px;
-            margin-inline: auto;
-          }
+        /* wrappers are transparent on mobile, become columns on desktop */
+        .profile-aside,
+        .profile-main {
+          display: contents;
         }
         .banner {
           background: var(--grad-primary);
@@ -486,6 +488,59 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           margin-top: 5px;
           max-width: 250px;
           line-height: 1.45;
+        }
+
+        /* Desktop: two-column dashboard that fills the content area */
+        @media (min-width: 1024px) {
+          div.profile {
+            max-width: 1120px;
+            margin-inline: auto;
+            padding: 28px 28px 32px;
+            display: grid;
+            grid-template-columns: 320px minmax(0, 1fr);
+            gap: 28px;
+            align-items: start;
+          }
+          .profile-aside {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: sticky;
+            top: 28px;
+          }
+          .profile-main {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+          }
+          .banner {
+            border-radius: var(--r-xl);
+            padding-bottom: 22px;
+          }
+          .banner::after {
+            border-radius: var(--r-xl);
+          }
+          .stats {
+            margin: 0;
+          }
+          .segment-wrap {
+            position: static;
+            padding: 0;
+          }
+          .panel {
+            padding: 0;
+            min-height: 360px;
+          }
+          .fav-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+          }
+          .placeholder {
+            justify-content: center;
+            min-height: 360px;
+          }
         }
       `}</style>
     </div>
