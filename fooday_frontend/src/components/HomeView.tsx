@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { Search, Heart, Star, Bell, Sparkles } from 'lucide-react';
-import { FOODS, FoodCategory } from '@/data/foods';
-import { useFavorites, toggleFavorite } from '@/hooks/useFavorites';
+import { useFoods, FoodCategory } from '@/hooks/useFoods';
+import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
 
 interface HomeViewProps {
@@ -14,11 +14,12 @@ interface HomeViewProps {
 const CATEGORIES: ('All' | FoodCategory)[] = ['All', 'Foods', 'Drinks', 'Snacks'];
 
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
-  const favorites = useFavorites();
+  const { foods, loading } = useFoods();
+  const { favorites, toggleFavorite } = useFavorites();
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const filteredFoods = FOODS.filter((item) => {
+  const filteredFoods = foods.filter((item) => {
     const matchesCategory =
       selectedCategory === 'All' || item.category === selectedCategory;
     const q = searchQuery.trim().toLowerCase();
@@ -97,19 +98,25 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
       </div>
 
       {/* Grid */}
-      {filteredFoods.length > 0 ? (
+      {loading ? (
+        <div className="grid">
+          {Array.from({ length: 8 }).map((_, idx) => (
+            <div key={idx} className="card skeleton" aria-hidden="true" />
+          ))}
+        </div>
+      ) : filteredFoods.length > 0 ? (
         <div className="grid">
           {filteredFoods.map((item, i) => {
-            const isFav = favorites.includes(item.name);
+            const isFav = favorites.has(item.id);
             return (
               <article
-                key={item.name}
+                key={item.id}
                 className="card"
                 style={{ animationDelay: `${Math.min(i, 8) * 55}ms` }}
               >
                 <div className="card-media">
                   <Image
-                    src={item.image}
+                    src={item.image_url}
                     alt={item.name}
                     fill
                     sizes="(max-width: 640px) 50vw, 290px"
@@ -117,7 +124,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                   />
                   {item.tag && <span className="card-tag glass">{item.tag}</span>}
                   <button
-                    onClick={() => toggleFavorite(item.name)}
+                    onClick={() => toggleFavorite(item.id)}
                     className={`fav ${isFav ? 'is-fav' : ''}`}
                     aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
                     aria-pressed={isFav}
@@ -355,6 +362,17 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           .grid {
             grid-template-columns: repeat(6, minmax(0, 1fr));
           }
+        }
+        .card.skeleton {
+          height: 230px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: var(--r-lg);
+          animation: pulse 1.2s var(--ease) infinite;
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
         }
         .card {
           background: var(--surface);

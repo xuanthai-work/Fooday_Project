@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { Mail, MapPin, Star, ChevronRight, Heart, Clock, LogOut, User as UserIcon } from 'lucide-react';
-import { FOOD_BY_NAME } from '@/data/foods';
+import { useFoods } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,12 +13,13 @@ interface ProfileViewProps {
 }
 
 export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
-  const favorites = useFavorites();
+  const { byId } = useFoods();
+  const { favorites } = useFavorites();
   const { user, signOut } = useAuth();
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
 
-  const favoriteItems = favorites
-    .map((name) => FOOD_BY_NAME[name])
+  const favoriteItems = [...favorites]
+    .map((id) => byId[id])
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   const isGuest = user?.is_anonymous || !user?.email;
@@ -113,7 +114,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
             <div className="fav-list">
               {favoriteItems.map((item, i) => (
                 <button
-                  key={item.name}
+                  key={item.id}
                   className="fav-item"
                   style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}
                   onClick={() =>
@@ -123,7 +124,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                   }
                 >
                   <Image
-                    src={item.image}
+                    src={item.image_url}
                     alt={item.name}
                     width={66}
                     height={66}

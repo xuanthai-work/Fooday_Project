@@ -1,54 +1,83 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from './useAuth';
 
 /**
- * Favorites persisted to localStorage, exposed as an external store so any
- * component can read/mutate it reactively without prop-threading — and without
- * setState-in-effect. The snapshot reference is cached so useSyncExternalStore
- * stays stable between renders.
+ * Favorites stored in Supabase, keyed by food_id and scoped to the signed-in
+ * user (RLS). Works for anonymous "guest" sessions too. Subscribes to Realtime
+ * so favorites sync live across a user's devices.
  */
-const KEY = 'fooday_favorites';
-const EMPTY: string[] = [];
+export function useFavorites() {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const [favorites, setFavorites] = useState<Set<number>>(new Set());
 
-let cache: string[] = EMPTY;
-let cacheRaw: string | null = null;
-const listeners = new Set<() => void>();
+  useEffect(() => {
+    let active = true;
+    const id = userId;
 
-function read(): string[] {
-  if (typeof window === 'undefined') return EMPTY;
-  const raw = localStorage.getItem(KEY);
-  if (raw === cacheRaw) return cache;
-  cacheRaw = raw;
-  try {
-    cache = raw ? (JSON.parse(raw) as string[]) : EMPTY;
-  } catch {
-    cache = EMPTY;
-  }
-  return cache;
-}
+    const load = async () => {
+      if (!id) {
+        if (active) setFavorites(new Set());
+        return;
+      }
+      const { data, error } = await supabase
+        .from('favorites')
+        .select('food_id')
+        .eq('user_id', id);
+      if (active && !error) {
+        setFavorites(new Set((data ?? []).map((r) => r.food_id as number)));
+      }
+    };
 
-function subscribe(callback: () => void): () => void {
-  listeners.add(callback);
-  window.addEventListener('storage', callback);
-  return () => {
-    listeners.delete(callback);
-    window.removeEventListener('storage', callback);
-  };
-}
+    // Defer the initial load out of the effect body (no sync setState in effect).
+    const timer = setTimeout(load, 0);
 
-export function toggleFavorite(name: string): void {
-  const current = read();
-  const next = current.includes(name)
-    ? current.filter((n) => n !== name)
-    : [...current, name];
-  const raw = JSON.stringify(next);
-  localStorage.setItem(KEY, raw);
-  cache = next;
-  cacheRaw = raw;
-  listeners.forEach((l) => l());
-}
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    if (id) {
+      channel = supabase
+        .channel(`favorites:${id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'favorites', filter: `user_id=eq.${id}` },
+          () => {
+            load();
+          },
+        )
+        .subscribe();
+    }
 
-export function useFavorites(): string[] {
-  return useSyncExternalStore(subscribe, read, () => EMPTY);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  const toggleFavorite = useCallback(
+    async (foodId: number) => {
+      if (!userId) return;
+      const isFav = favorites.has(foodId);
+
+      // optimistic update; Realtime reconciles afterwards
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        if (isFav) next.delete(foodId);
+        else next.add(foodId);
+        return next;
+      });
+
+      if (isFav) {
+        await supabase.from('favorites').delete().eq('user_id', userId).eq('food_id', foodId);
+      } else {
+        // user_id defaults to auth.uid() server-side
+        await supabase.from('favorites').insert({ food_id: foodId });
+      }
+    },
+    [userId, favorites],
+  );
+
+  return { favorites, toggleFavorite, ready: userId !== null };
 }
