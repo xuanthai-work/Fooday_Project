@@ -493,7 +493,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
         /* Desktop: two-column dashboard that fills the content area */
         @media (min-width: 1024px) {
           div.profile {
-            max-width: 1120px;
+            max-width: 1400px;
             margin-inline: auto;
             padding: 28px 28px 32px;
             display: grid;
@@ -540,6 +540,11 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           .placeholder {
             justify-content: center;
             min-height: 360px;
+          }
+        }
+        @media (min-width: 1440px) {
+          .fav-list {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
         }
       `}</style>

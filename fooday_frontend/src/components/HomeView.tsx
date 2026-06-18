@@ -346,6 +346,16 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
             grid-template-columns: repeat(4, minmax(0, 1fr));
           }
         }
+        @media (min-width: 1600px) {
+          .grid {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+          }
+        }
+        @media (min-width: 1920px) {
+          .grid {
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+          }
+        }
         .card {
           background: var(--surface);
           border: 1px solid var(--border);
