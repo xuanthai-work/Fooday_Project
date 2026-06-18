@@ -26,4 +26,4 @@ def read_root():
 
 if __name__ == "__main__":
     # Reload=True giúp server tự khởi động lại khi bạn sửa code
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=2001, reload=True)
