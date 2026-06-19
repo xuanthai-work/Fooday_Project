@@ -2,19 +2,7 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import {
-  Mail,
-  CalendarDays,
-  Star,
-  ChevronRight,
-  Heart,
-  Clock,
-  LogOut,
-  UtensilsCrossed,
-  Dices,
-  Plus,
-  Sparkles,
-} from 'lucide-react';
+import { Mail, CalendarDays, Star, ChevronRight, Heart, Clock, LogOut } from 'lucide-react';
 import { useFoods } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
@@ -22,15 +10,9 @@ import { useAuth } from '@/hooks/useAuth';
 
 interface ProfileViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
-  onNavigate: (tab: 'home' | 'chat' | 'random' | 'profile') => void;
-  onAddDish: () => void;
 }
 
-export default function ProfileView({
-  onNavigateToChat,
-  onNavigate,
-  onAddDish,
-}: ProfileViewProps) {
+export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const { foods, byId } = useFoods();
   const { favorites } = useFavorites();
   const { user, signOut } = useAuth();
@@ -53,13 +35,6 @@ export default function ProfileView({
     // To upgrade, they just sign out of guest mode to go back to AuthScreen
     await signOut();
   };
-
-  const quickActions = [
-    { key: 'home', label: 'Browse dishes', icon: UtensilsCrossed, onClick: () => onNavigate('home') },
-    { key: 'random', label: 'Random pick', icon: Dices, onClick: () => onNavigate('random') },
-    { key: 'add', label: 'Add a dish', icon: Plus, onClick: onAddDish },
-    { key: 'chat', label: 'Ask Foodie AI', icon: Sparkles, onClick: () => onNavigate('chat') },
-  ];
 
   return (
     <div className="profile animate-fade-in">
@@ -114,17 +89,6 @@ export default function ProfileView({
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="quick-actions">
-        {quickActions.map(({ key, label, icon: Icon, onClick }) => (
-          <button key={key} className="qa-card" onClick={onClick}>
-            <span className="qa-icon">
-              <Icon size={20} />
-            </span>
-            <span className="qa-label">{label}</span>
-          </button>
-        ))}
-      </div>
       </div>
 
       {/* Segmented control */}
@@ -385,47 +349,6 @@ export default function ProfileView({
           height: 30px;
           background: var(--border-strong);
         }
-        .quick-actions {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-          margin: 16px clamp(12px, 4vw, 20px) 0;
-        }
-        .qa-card {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          padding: 14px;
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: var(--r-md);
-          box-shadow: var(--shadow-sm);
-          cursor: pointer;
-          text-align: left;
-          transition: transform var(--dur-fast) var(--ease),
-            box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-        }
-        .qa-card:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-md);
-          border-color: var(--primary-soft-2);
-        }
-        .qa-icon {
-          display: grid;
-          place-items: center;
-          width: 38px;
-          height: 38px;
-          flex-shrink: 0;
-          border-radius: var(--r-sm);
-          background: var(--primary-soft);
-          color: var(--primary-strong);
-        }
-        .qa-label {
-          font-size: 0.84375rem;
-          font-weight: 700;
-          color: var(--text);
-          line-height: 1.2;
-        }
         .segment-wrap {
           position: sticky;
           top: 0;
@@ -610,9 +533,6 @@ export default function ProfileView({
             border-radius: var(--r-xl);
           }
           .stats {
-            margin: 0;
-          }
-          .quick-actions {
             margin: 0;
           }
           .segment-wrap {
