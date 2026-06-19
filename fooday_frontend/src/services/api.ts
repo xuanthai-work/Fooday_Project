@@ -44,3 +44,23 @@ export const chatService = {
     }
   }
 };
+
+export interface DishImage {
+  url: string;
+  alt: string;
+  credit: string;
+}
+
+export const dishImageService = {
+  async search(q: string): Promise<DishImage[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/dish-image?q=${encodeURIComponent(q)}`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.images ?? []) as DishImage[];
+    } catch (error) {
+      console.error('Connection error searching dish image:', error);
+      return [];
+    }
+  },
+};
