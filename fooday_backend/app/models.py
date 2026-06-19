@@ -1,14 +1,17 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field
 
-# 1. Dữ liệu Flutter gửi lên (Request)
+
 class ChatRequest(BaseModel):
-    user_message: str          # Tin nhắn người dùng nhập (VD: "Ăn gì ở Cầu Giấy?")
-    user_id: Optional[str] = "guest" # ID người dùng (để nhớ lịch sử chat sau này)
-    favorites: Optional[List[str]] = None  # Tên các món user đã thích (để gợi ý cá nhân hoá)
+    """Payload sent by the frontend chat client."""
 
-# 2. Dữ liệu Server trả về (Response)
+    user_message: str
+    user_id: str | None = "guest"
+    favorites: list[str] | None = None  # dish names the user has favorited, for personalization
+
+
 class ChatResponse(BaseModel):
-    reply: str                 # Câu trả lời của AI (VD: "Bạn thử quán Phở Lý Quốc Sư nhé...")
-    action: Optional[str] = None # Hành động kèm theo (VD: "open_map", "show_menu")
-    suggested_dishes: Optional[List[str]] = [] # Gợi ý món ăn kèm theo (nếu có)
+    """Recommendation returned to the frontend chat client."""
+
+    reply: str
+    action: str | None = None  # optional follow-up action, e.g. "open_map"
+    suggested_dishes: list[str] = Field(default_factory=list)
