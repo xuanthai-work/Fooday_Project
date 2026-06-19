@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 export type FoodCategory = 'Foods' | 'Drinks' | 'Snacks';
@@ -18,57 +18,56 @@ export interface Food {
 
 const COLUMNS = 'id, slug, name, category, restaurant, rating, image_url, tag';
 
-// Module-level cache so switching tabs doesn't refetch the catalog.
-let cache: Food[] | null = null;
-let inflight: Promise<Food[]> | null = null;
+// Shared store so a newly added dish appears app-wide (Home + Profile) without reload.
+const EMPTY: Food[] = [];
+let cache: Food[] = EMPTY;
+let loaded = false;
+let loadingNow = false;
+const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((l) => l());
 
-function loadFoods(): Promise<Food[]> {
-  if (cache) return Promise.resolve(cache);
-  if (!inflight) {
-    inflight = (async () => {
-      const { data, error } = await supabase
-        .from('foods')
-        .select(COLUMNS)
-        .order('id', { ascending: true });
-      if (error) throw error;
-      cache = (data ?? []) as unknown as Food[];
-      return cache;
-    })();
+async function load(): Promise<void> {
+  loadingNow = true;
+  emit();
+  const { data, error } = await supabase
+    .from('foods')
+    .select(COLUMNS)
+    .order('id', { ascending: true });
+  if (!error) {
+    cache = (data ?? []) as unknown as Food[];
+    loaded = true;
   }
-  return inflight;
+  loadingNow = false;
+  emit();
+}
+
+/** Re-fetch the catalog and notify all consumers (call after adding a dish). */
+export function refreshFoods(): Promise<void> {
+  return load();
+}
+
+function subscribe(callback: () => void): () => void {
+  listeners.add(callback);
+  if (!loaded && !loadingNow) load();
+  return () => {
+    listeners.delete(callback);
+  };
+}
+
+function getSnapshot(): Food[] {
+  return cache;
+}
+
+function getServerSnapshot(): Food[] {
+  return EMPTY;
 }
 
 export function useFoods() {
-  const [foods, setFoods] = useState<Food[]>(cache ?? []);
-  const [loading, setLoading] = useState(cache === null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (cache) return; // already seeded from cache via initial state
-    let active = true;
-    loadFoods()
-      .then((data) => {
-        if (active) {
-          setFoods(data);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (active) {
-          setError(e instanceof Error ? e.message : 'Failed to load dishes.');
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
+  const foods = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const byId = useMemo(() => {
     const map: Record<number, Food> = {};
     for (const f of foods) map[f.id] = f;
     return map;
   }, [foods]);
-
-  return { foods, byId, loading, error };
+  return { foods, byId, loading: !loaded, refresh: refreshFoods };
 }
