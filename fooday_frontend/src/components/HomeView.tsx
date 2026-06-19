@@ -3,15 +3,13 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { Search, Heart, Star, Bell, Sparkles } from 'lucide-react';
-import { useFoods, FoodCategory } from '@/hooks/useFoods';
+import { useFoods, CATEGORY_FILTERS } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
 
 interface HomeViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
 }
-
-const CATEGORIES: ('All' | FoodCategory)[] = ['All', 'Foods', 'Drinks', 'Snacks'];
 
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { foods, loading } = useFoods();
@@ -73,7 +71,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
 
       {/* Categories */}
       <div className="categories" role="tablist" aria-label="Food categories">
-        {CATEGORIES.map((category) => {
+        {CATEGORY_FILTERS.map((category) => {
           const isActive = selectedCategory === category;
           return (
             <button

@@ -3,10 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Dices, Star, Heart, Sparkles, RotateCw } from 'lucide-react';
-import { useFoods, FoodCategory, Food } from '@/hooks/useFoods';
+import { useFoods, CATEGORY_FILTERS, CategoryFilter, Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
-
-const CATEGORIES: ('All' | FoodCategory)[] = ['All', 'Foods', 'Drinks', 'Snacks'];
 
 interface RandomViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
@@ -15,7 +13,7 @@ interface RandomViewProps {
 export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const { foods } = useFoods();
   const { favorites, toggleFavorite } = useFavorites();
-  const [category, setCategory] = useState<'All' | FoodCategory>('All');
+  const [category, setCategory] = useState<CategoryFilter>('All');
   const [current, setCurrent] = useState<Food | null>(null);
   const [result, setResult] = useState<Food | null>(null);
   const [spinning, setSpinning] = useState(false);
@@ -54,7 +52,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     tick();
   };
 
-  const selectCategory = (c: 'All' | FoodCategory) => {
+  const selectCategory = (c: CategoryFilter) => {
     if (spinning) return;
     setCategory(c);
     setResult(null);
@@ -73,7 +71,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
       </header>
 
       <div className="rnd-chips" role="tablist" aria-label="Category">
-        {CATEGORIES.map((c) => (
+        {CATEGORY_FILTERS.map((c) => (
           <button
             key={c}
             className={`chip ${category === c ? 'active' : ''}`}

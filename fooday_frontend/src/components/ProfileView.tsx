@@ -256,13 +256,6 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           font-weight: 800;
           font-size: clamp(28px, 8vw, 34px);
         }
-        .avatar-img {
-          width: 100%;
-          height: 100%;
-          border-radius: var(--r-full);
-          object-fit: cover;
-          display: block;
-        }
         .id-text {
           display: flex;
           flex-direction: column;

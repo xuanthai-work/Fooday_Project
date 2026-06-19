@@ -41,21 +41,15 @@ export default function AuthScreen() {
     if (!validate()) return;
 
     setLoading(true);
-    let authError: Error | null = null;
+    let failed = false;
 
     try {
       if (mode === 'signUp') {
-        const { error: err } = await supabase.auth.signUp({
-          email,
-          password,
-        });
+        const { error: err } = await supabase.auth.signUp({ email, password });
         if (err) throw err;
         setSuccess('Check your email to confirm your account!');
       } else if (mode === 'signIn') {
-        const { error: err } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
         if (err) throw err;
       } else if (mode === 'forgotPassword') {
         const { error: err } = await supabase.auth.resetPasswordForEmail(email);
@@ -63,18 +57,12 @@ export default function AuthScreen() {
         setSuccess('Password reset instructions sent to your email.');
       }
     } catch (err: unknown) {
-      authError = err as Error;
+      failed = true;
       setError((err as Error).message || 'Authentication failed. Please try again.');
     } finally {
-      if (mode === 'signUp' && !authError) {
-        // Keep loading state until redirect or manual state clear, 
-        // but since we just show success message, we can stop loading.
-        setLoading(false);
-      } else if (mode === 'forgotPassword' && !authError) {
-        setLoading(false);
-      } else if (authError) {
-        setLoading(false);
-      }
+      // On a successful sign-in the auth state change unmounts this screen, so
+      // we leave loading on. Every other outcome returns control to the form.
+      if (failed || mode !== 'signIn') setLoading(false);
     }
   };
 

@@ -5,6 +5,15 @@ import { supabase } from '@/lib/supabaseClient';
 
 export type FoodCategory = 'Foods' | 'Drinks' | 'Snacks';
 
+/** The real dish categories (used by the Add Dish form). */
+export const FOOD_CATEGORIES: FoodCategory[] = ['Foods', 'Drinks', 'Snacks'];
+
+/** A category filter, including the "All" pseudo-category used by browse views. */
+export type CategoryFilter = 'All' | FoodCategory;
+
+/** Filter chips for browsing: "All" plus every real category. */
+export const CATEGORY_FILTERS: CategoryFilter[] = ['All', ...FOOD_CATEGORIES];
+
 export interface Food {
   id: number;
   slug: string;

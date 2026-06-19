@@ -5,10 +5,8 @@ import Image from 'next/image';
 import { X, Upload, Star, Loader2, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
-import { refreshFoods, FoodCategory } from '@/hooks/useFoods';
+import { refreshFoods, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
 import { dishImageService, DishImage } from '@/services/api';
-
-const CATEGORIES: FoodCategory[] = ['Foods', 'Drinks', 'Snacks'];
 
 const slugify = (s: string) =>
   s
@@ -218,7 +216,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           <div className="field">
             <span className="label">Category</span>
             <div className="chips">
-              {CATEGORIES.map((c) => (
+              {FOOD_CATEGORIES.map((c) => (
                 <button
                   type="button"
                   key={c}
