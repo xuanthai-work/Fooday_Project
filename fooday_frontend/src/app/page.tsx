@@ -88,7 +88,11 @@ function AppContent() {
         )}
         {activeTab === 'random' && <RandomView onNavigateToChat={handleNavigateToChat} />}
         {activeTab === 'profile' && (
-          <ProfileView onNavigateToChat={handleNavigateToChat} />
+          <ProfileView
+            onNavigateToChat={handleNavigateToChat}
+            onNavigate={setActiveTab}
+            onAddDish={handleAddClick}
+          />
         )}
       </div>
 

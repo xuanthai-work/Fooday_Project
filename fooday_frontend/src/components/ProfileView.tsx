@@ -2,7 +2,19 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { Mail, MapPin, Star, ChevronRight, Heart, Clock, LogOut, User as UserIcon } from 'lucide-react';
+import {
+  Mail,
+  CalendarDays,
+  Star,
+  ChevronRight,
+  Heart,
+  Clock,
+  LogOut,
+  UtensilsCrossed,
+  Dices,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import { useFoods } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
@@ -10,10 +22,16 @@ import { useAuth } from '@/hooks/useAuth';
 
 interface ProfileViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
+  onNavigate: (tab: 'home' | 'chat' | 'random' | 'profile') => void;
+  onAddDish: () => void;
 }
 
-export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
-  const { byId } = useFoods();
+export default function ProfileView({
+  onNavigateToChat,
+  onNavigate,
+  onAddDish,
+}: ProfileViewProps) {
+  const { foods, byId } = useFoods();
   const { favorites } = useFavorites();
   const { user, signOut } = useAuth();
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
@@ -23,11 +41,25 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   const isGuest = user?.is_anonymous || !user?.email;
+  const displayName = isGuest ? 'Guest' : user?.email?.split('@')[0] || 'User';
+  const initial = displayName.charAt(0).toUpperCase();
+  const dishesAdded = user?.id ? foods.filter((f) => f.created_by === user.id).length : 0;
+  const points = favoriteItems.length * 5 + dishesAdded * 25;
+  const memberSince = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+    : null;
 
   const handleUpgrade = async () => {
     // To upgrade, they just sign out of guest mode to go back to AuthScreen
     await signOut();
   };
+
+  const quickActions = [
+    { key: 'home', label: 'Browse dishes', icon: UtensilsCrossed, onClick: () => onNavigate('home') },
+    { key: 'random', label: 'Random pick', icon: Dices, onClick: () => onNavigate('random') },
+    { key: 'add', label: 'Add a dish', icon: Plus, onClick: onAddDish },
+    { key: 'chat', label: 'Ask Foodie AI', icon: Sparkles, onClick: () => onNavigate('chat') },
+  ];
 
   return (
     <div className="profile animate-fade-in">
@@ -43,12 +75,10 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
 
         <div className="id-row">
           <div className="avatar-ring">
-            <div className="avatar-placeholder">
-              <UserIcon size={40} strokeWidth={1.5} />
-            </div>
+            <div className="avatar-placeholder">{initial}</div>
           </div>
           <div className="id-text">
-            <h2 className="name">{isGuest ? 'Guest User' : user?.email?.split('@')[0] || 'User'}</h2>
+            <h2 className="name">{isGuest ? 'Guest User' : displayName}</h2>
             <span className="detail">
               <Mail size={13} /> {isGuest ? 'Not signed in' : user?.email}
             </span>
@@ -58,7 +88,8 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
               </button>
             ) : (
               <span className="detail">
-                <MapPin size={13} /> Fooday Member
+                <CalendarDays size={13} />{' '}
+                {memberSince ? `Member since ${memberSince}` : 'Fooday Member'}
               </span>
             )}
           </div>
@@ -73,14 +104,26 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
         </div>
         <span className="stat-divider" />
         <div className="stat">
-          <span className="stat-num">16</span>
-          <span className="stat-label">Reviews</span>
+          <span className="stat-num">{dishesAdded}</span>
+          <span className="stat-label">Dishes</span>
         </div>
         <span className="stat-divider" />
         <div className="stat">
-          <span className="stat-num">1.2k</span>
+          <span className="stat-num">{points}</span>
           <span className="stat-label">Points</span>
         </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="quick-actions">
+        {quickActions.map(({ key, label, icon: Icon, onClick }) => (
+          <button key={key} className="qa-card" onClick={onClick}>
+            <span className="qa-icon">
+              <Icon size={20} />
+            </span>
+            <span className="qa-label">{label}</span>
+          </button>
+        ))}
       </div>
       </div>
 
@@ -240,10 +283,13 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           width: 100%;
           height: 100%;
           border-radius: var(--r-full);
-          background: var(--surface-2);
+          background: var(--grad-primary);
           display: grid;
           place-items: center;
-          color: var(--text-faint);
+          color: #fff;
+          font-family: var(--font-display), sans-serif;
+          font-weight: 800;
+          font-size: clamp(28px, 8vw, 34px);
         }
         .avatar-img {
           width: 100%;
@@ -338,6 +384,47 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           width: 1px;
           height: 30px;
           background: var(--border-strong);
+        }
+        .quick-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin: 16px clamp(12px, 4vw, 20px) 0;
+        }
+        .qa-card {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          padding: 14px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-md);
+          box-shadow: var(--shadow-sm);
+          cursor: pointer;
+          text-align: left;
+          transition: transform var(--dur-fast) var(--ease),
+            box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+        }
+        .qa-card:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-md);
+          border-color: var(--primary-soft-2);
+        }
+        .qa-icon {
+          display: grid;
+          place-items: center;
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+          border-radius: var(--r-sm);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+        }
+        .qa-label {
+          font-size: 0.84375rem;
+          font-weight: 700;
+          color: var(--text);
+          line-height: 1.2;
         }
         .segment-wrap {
           position: sticky;
@@ -523,6 +610,9 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
             border-radius: var(--r-xl);
           }
           .stats {
+            margin: 0;
+          }
+          .quick-actions {
             margin: 0;
           }
           .segment-wrap {
