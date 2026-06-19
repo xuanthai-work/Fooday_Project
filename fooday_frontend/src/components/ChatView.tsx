@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Plus, Bot } from 'lucide-react';
 import { chatService, ChatResponse } from '@/services/api';
+import { useFavorites } from '@/hooks/useFavorites';
+import { useFoods } from '@/hooks/useFoods';
 
 interface Message {
   isUser: boolean;
@@ -43,6 +45,8 @@ export default function ChatView({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const { favorites } = useFavorites();
+  const { byId } = useFoods();
 
   const scrollToBottom = () => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -61,7 +65,10 @@ export default function ChatView({
     setMessages((prev) => [...prev, { isUser: true, message: text, time: now() }]);
     setIsLoading(true);
 
-    const response: ChatResponse | null = await chatService.sendMessage(text);
+    const favoriteNames = [...favorites]
+      .map((id) => byId[id]?.name)
+      .filter((n): n is string => Boolean(n));
+    const response: ChatResponse | null = await chatService.sendMessage(text, favoriteNames);
     setIsLoading(false);
 
     setMessages((prev) => [

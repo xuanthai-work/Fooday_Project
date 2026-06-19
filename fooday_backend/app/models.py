@@ -5,6 +5,7 @@ from typing import Optional, List
 class ChatRequest(BaseModel):
     user_message: str          # Tin nhắn người dùng nhập (VD: "Ăn gì ở Cầu Giấy?")
     user_id: Optional[str] = "guest" # ID người dùng (để nhớ lịch sử chat sau này)
+    favorites: Optional[List[str]] = None  # Tên các món user đã thích (để gợi ý cá nhân hoá)
 
 # 2. Dữ liệu Server trả về (Response)
 class ChatResponse(BaseModel):
