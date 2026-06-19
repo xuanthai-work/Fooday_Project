@@ -93,7 +93,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
 
       {/* Segmented control */}
       <div className="profile-main">
-      <div className="segment-wrap glass">
+      <div className="segment-wrap">
         <div className="segment">
           <span
             className="segment-slider"
@@ -354,6 +354,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           top: 0;
           z-index: 10;
           padding: 16px clamp(16px, 5vw, 20px) 12px;
+          background: var(--bg);
         }
         .segment {
           position: relative;

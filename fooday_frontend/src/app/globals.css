@@ -194,6 +194,17 @@ button {
   font-family: inherit;
 }
 
+/* Kill the square tap-highlight flash on touch devices (ignores border-radius) */
+button,
+a,
+label,
+input,
+select,
+textarea,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
 ::selection {
   background: var(--primary-soft-2);
   color: var(--text);
