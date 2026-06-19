@@ -307,6 +307,7 @@ button {
   }
   .app-shell--app .bottom-nav .nav-brand {
     display: flex;
+    order: -2;
     align-items: center;
     gap: 11px;
     padding: 6px 12px 20px;
@@ -325,6 +326,29 @@ button {
     background: var(--grad-primary);
     color: #fff;
     box-shadow: var(--shadow-primary);
+  }
+  .app-shell--app .bottom-nav .nav-cluster {
+    flex-direction: column;
+    flex: none;
+    width: 100%;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .app-shell--app .bottom-nav .nav-fab {
+    order: -1;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    width: 100%;
+    height: auto;
+    margin: 0 0 10px;
+    padding: 12px 16px;
+    border-radius: var(--r-md);
+  }
+  .app-shell--app .bottom-nav .nav-fab-label {
+    display: inline;
+    font-size: 14.5px;
+    font-weight: 700;
   }
   .app-shell--app .bottom-nav .nav-indicator {
     display: none;

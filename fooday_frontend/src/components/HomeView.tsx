@@ -2,12 +2,10 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { Search, Heart, Star, Bell, Sparkles, Plus } from 'lucide-react';
+import { Search, Heart, Star, Bell, Sparkles } from 'lucide-react';
 import { useFoods, FoodCategory } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
-import { useAuth } from '@/hooks/useAuth';
 import ThemeToggle from './ThemeToggle';
-import AddDishModal from './AddDishModal';
 
 interface HomeViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
@@ -18,21 +16,8 @@ const CATEGORIES: ('All' | FoodCategory)[] = ['All', 'Foods', 'Drinks', 'Snacks'
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { foods, loading } = useFoods();
   const { favorites, toggleFavorite } = useFavorites();
-  const { user } = useAuth();
-  const isGuest = user?.is_anonymous ?? true;
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [showAdd, setShowAdd] = useState(false);
-  const [showHint, setShowHint] = useState(false);
-
-  const handleAddClick = () => {
-    if (isGuest) {
-      setShowHint(true);
-      setTimeout(() => setShowHint(false), 2600);
-      return;
-    }
-    setShowAdd(true);
-  };
 
   const filteredFoods = foods.filter((item) => {
     const matchesCategory =
@@ -56,14 +41,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           <h1 className="home-title">Homepage</h1>
         </div>
         <div className="header-actions">
-          <button
-            className="icon-button"
-            aria-label="Add dish"
-            onClick={handleAddClick}
-            title={isGuest ? 'Sign up to add dishes' : 'Add a dish'}
-          >
-            <Plus size={20} />
-          </button>
           <button className="icon-button" aria-label="Notifications">
             <Bell size={20} />
             <span className="notif-dot" />
@@ -71,8 +48,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           <ThemeToggle />
         </div>
       </header>
-      {showHint && <div className="add-hint">Sign up to add dishes ✨</div>}
-      {showAdd && <AddDishModal onClose={() => setShowAdd(false)} />}
 
       {/* Search */}
       <div className="search-bar glass">
@@ -196,17 +171,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
       <style jsx>{`
         .home {
           padding: clamp(16px, 5vw, 26px) clamp(16px, 5vw, 20px) 32px;
-        }
-        .add-hint {
-          display: inline-block;
-          margin: 0 0 16px;
-          padding: 8px 14px;
-          border-radius: var(--r-full);
-          background: var(--primary-soft);
-          color: var(--primary-strong);
-          font-size: 13px;
-          font-weight: 600;
-          animation: fadeInUp 0.3s var(--ease-out) both;
         }
         .home-header {
           display: flex;
