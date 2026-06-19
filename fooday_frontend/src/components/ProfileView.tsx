@@ -136,6 +136,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                     width={66}
                     height={66}
                     className="fav-img"
+                    style={{ objectFit: 'cover' }}
                   />
                   <div className="fav-info">
                     <h4 className="fav-name">{item.restaurant}</h4>

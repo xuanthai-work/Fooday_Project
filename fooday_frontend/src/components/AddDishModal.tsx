@@ -137,7 +137,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           <div className="image-block">
             <div className="preview">
               {resolvedImage ? (
-                <Image src={resolvedImage} alt={name || 'Dish'} fill sizes="320px" className="preview-img" />
+                <Image src={resolvedImage} alt={name || 'Dish'} fill sizes="320px" className="preview-img" style={{ objectFit: 'cover' }} />
               ) : (
                 <div className="preview-empty">
                   <Sparkles size={20} />
@@ -196,7 +196,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                     onClick={() => pickCandidate(c.url)}
                     aria-label="Use this photo"
                   >
-                    <Image src={c.url} alt={c.alt} width={52} height={52} className="thumb-img" />
+                    <Image src={c.url} alt={c.alt} width={52} height={52} className="thumb-img" style={{ objectFit: 'cover' }} />
                   </button>
                 ))}
               </div>

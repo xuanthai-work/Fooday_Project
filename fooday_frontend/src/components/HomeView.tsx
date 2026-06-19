@@ -121,6 +121,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                     fill
                     sizes="(max-width: 640px) 50vw, 290px"
                     className="card-img"
+                    style={{ objectFit: 'cover' }}
                   />
                   {item.tag && <span className="card-tag glass">{item.tag}</span>}
                   <button

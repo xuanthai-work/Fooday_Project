@@ -95,6 +95,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                 fill
                 sizes="440px"
                 className="reel-img"
+                style={{ objectFit: 'cover' }}
               />
               <div className="reel-shade" />
               {result && <span className="reel-badge">You should eat</span>}
