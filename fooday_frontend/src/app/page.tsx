@@ -1,19 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Home, Sparkles, User as UserIcon, Plus } from 'lucide-react';
+import { Home, Sparkles, User as UserIcon, Plus, Dices } from 'lucide-react';
 import HomeView from '@/components/HomeView';
 import ChatView from '@/components/ChatView';
 import ProfileView from '@/components/ProfileView';
+import RandomView from '@/components/RandomView';
 import AddDishModal from '@/components/AddDishModal';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import AuthScreen from '@/components/AuthScreen';
 
-type TabType = 'home' | 'chat' | 'profile';
+type TabType = 'home' | 'chat' | 'random' | 'profile';
 
 const TABS: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'chat', label: 'AI Chat', icon: Sparkles },
+  { id: 'random', label: 'Random', icon: Dices },
   { id: 'profile', label: 'Profile', icon: UserIcon },
 ];
 
@@ -84,6 +86,7 @@ function AppContent() {
             onClearInitialMessage={() => setChatQuery('')}
           />
         )}
+        {activeTab === 'random' && <RandomView onNavigateToChat={handleNavigateToChat} />}
         {activeTab === 'profile' && (
           <ProfileView onNavigateToChat={handleNavigateToChat} />
         )}
