@@ -198,19 +198,19 @@ function AppContent() {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 58px;
-            height: 58px;
-            margin: -20px 6px 0;
+            width: 52px;
+            height: 52px;
+            margin: 0 6px;
             border-radius: var(--r-full);
             border: none;
             background: var(--grad-primary);
             color: #fff;
             cursor: pointer;
-            box-shadow: 0 0 0 6px var(--bg), 0 0 0 7px var(--border), var(--shadow-primary);
+            box-shadow: var(--shadow-primary);
             transition: transform var(--dur-fast) var(--ease);
           }
           .nav-fab:hover {
-            transform: translateY(-2px) scale(1.03);
+            transform: scale(1.06);
           }
           .nav-fab:active {
             transform: scale(0.94);
