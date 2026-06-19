@@ -206,7 +206,7 @@ function AppContent() {
             background: var(--grad-primary);
             color: #fff;
             cursor: pointer;
-            box-shadow: var(--shadow-primary);
+            box-shadow: 0 0 0 6px var(--bg), 0 0 0 7px var(--border), var(--shadow-primary);
             transition: transform var(--dur-fast) var(--ease);
           }
           .nav-fab:hover {

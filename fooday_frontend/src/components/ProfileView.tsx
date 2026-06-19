@@ -438,7 +438,7 @@ export default function ProfileView({
           grid-template-columns: 1fr 1fr;
           background: var(--surface-2);
           border: 1px solid var(--border);
-          border-radius: var(--r-full);
+          border-radius: var(--r-md);
           padding: 4px;
         }
         .segment-slider {
@@ -447,9 +447,10 @@ export default function ProfileView({
           left: 4px;
           width: calc(50% - 4px);
           height: calc(100% - 8px);
-          border-radius: var(--r-full);
+          border-radius: var(--r-sm);
           background: var(--surface);
-          box-shadow: var(--shadow-sm);
+          border: 1px solid var(--border-strong);
+          box-shadow: var(--shadow-md);
           transition: transform var(--dur) var(--ease);
         }
         .segment-btn {
