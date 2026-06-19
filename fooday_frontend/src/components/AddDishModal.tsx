@@ -28,9 +28,10 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [restaurant, setRestaurant] = useState('');
   const [rating, setRating] = useState(5);
   const [tag, setTag] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [urlInput, setUrlInput] = useState('');
+  const [uploadedUrl, setUploadedUrl] = useState('');
+  const [unsplashUrl, setUnsplashUrl] = useState('');
   const [candidates, setCandidates] = useState<DishImage[]>([]);
-  const [manual, setManual] = useState(false); // true once the user uploads / picks
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,22 +46,24 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Auto-fetch an image from the dish name (debounced; skipped once user overrides).
+  // Unsplash is the lowest-priority fallback: auto-fetch by dish name (debounced)
+  // only while the user hasn't pasted a URL or uploaded a photo.
   useEffect(() => {
     const q = name.trim();
-    if (!q || manual) return;
+    const hasUrl = /^https:\/\/\S+/i.test(urlInput.trim());
+    if (!q || hasUrl || uploadedUrl) return;
     let active = true;
     const timer = setTimeout(async () => {
       const imgs = await dishImageService.search(q);
       if (!active) return;
       setCandidates(imgs);
-      if (imgs[0]) setImageUrl((prev) => prev || imgs[0].url);
+      setUnsplashUrl(imgs[0]?.url ?? '');
     }, 600);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [name, manual]);
+  }, [name, urlInput, uploadedUrl]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -73,9 +76,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       const { error: upErr } = await supabase.storage.from('dish-images').upload(path, file);
       if (upErr) throw upErr;
       const { data } = supabase.storage.from('dish-images').getPublicUrl(path);
-      setImageUrl(data.publicUrl);
-      setManual(true);
-      setCandidates([]);
+      setUploadedUrl(data.publicUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
@@ -83,12 +84,19 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     }
   };
 
-  const pickCandidate = (url: string) => {
-    setImageUrl(url);
-    setManual(true);
-  };
+  const pickCandidate = (url: string) => setUnsplashUrl(url);
 
-  const canSubmit = Boolean(name.trim() && restaurant.trim() && imageUrl) && !busy;
+  // Image priority: pasted URL → uploaded photo → auto (Unsplash).
+  const urlValid = /^https:\/\/\S+/i.test(urlInput.trim());
+  const resolvedImage = (urlValid ? urlInput.trim() : '') || uploadedUrl || unsplashUrl;
+  const imageSource: 'url' | 'upload' | 'unsplash' | 'none' = urlValid
+    ? 'url'
+    : uploadedUrl
+      ? 'upload'
+      : unsplashUrl
+        ? 'unsplash'
+        : 'none';
+  const canSubmit = Boolean(name.trim() && restaurant.trim() && resolvedImage) && !busy;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,7 +110,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       category,
       restaurant: restaurant.trim(),
       rating,
-      image_url: imageUrl,
+      image_url: resolvedImage,
       tag: tag.trim() || null,
     });
     if (insErr) {
@@ -125,26 +133,66 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
         </header>
 
         <form className="form" onSubmit={handleSubmit}>
-          {/* Image */}
+          {/* Image — priority: pasted URL → uploaded photo → auto (Unsplash) */}
           <div className="image-block">
             <div className="preview">
-              {imageUrl ? (
-                <Image src={imageUrl} alt={name || 'Dish'} fill sizes="320px" className="preview-img" />
+              {resolvedImage ? (
+                <Image src={resolvedImage} alt={name || 'Dish'} fill sizes="320px" className="preview-img" />
               ) : (
                 <div className="preview-empty">
                   <Sparkles size={20} />
-                  <span>Type a name — we&apos;ll find a photo</span>
+                  <span>Paste a URL, upload a photo, or just type a name</span>
                 </div>
+              )}
+              {resolvedImage && (
+                <span className="src-badge">
+                  {imageSource === 'url'
+                    ? 'From URL'
+                    : imageSource === 'upload'
+                      ? 'Uploaded'
+                      : 'Auto · Unsplash'}
+                </span>
               )}
             </div>
 
-            {candidates.length > 0 && (
+            {/* 1 · paste a URL (highest priority) */}
+            <label className="field">
+              <span className="label">Image URL</span>
+              <input
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="Paste a link to a photo (optional)"
+                inputMode="url"
+              />
+            </label>
+
+            {/* 2 · upload */}
+            <div className="upload-row">
+              <button
+                type="button"
+                className="upload-btn"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+                {uploading ? 'Uploading…' : uploadedUrl ? 'Replace photo' : 'Upload a photo'}
+              </button>
+              {uploadedUrl && (
+                <button type="button" className="link-btn" onClick={() => setUploadedUrl('')}>
+                  Remove upload
+                </button>
+              )}
+              <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleUpload} />
+            </div>
+
+            {/* 3 · auto (Unsplash) — only when no URL / upload is set */}
+            {!urlValid && !uploadedUrl && candidates.length > 0 && (
               <div className="thumbs">
                 {candidates.map((c) => (
                   <button
                     type="button"
                     key={c.url}
-                    className={`thumb ${imageUrl === c.url ? 'active' : ''}`}
+                    className={`thumb ${unsplashUrl === c.url ? 'active' : ''}`}
                     onClick={() => pickCandidate(c.url)}
                     aria-label="Use this photo"
                   >
@@ -153,17 +201,6 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                 ))}
               </div>
             )}
-
-            <button
-              type="button"
-              className="upload-btn"
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-              {uploading ? 'Uploading…' : 'Upload a photo instead'}
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleUpload} />
           </div>
 
           {/* Name */}
@@ -369,6 +406,32 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
         }
         .upload-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-strong); }
+        .upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .link-btn {
+          background: none;
+          border: none;
+          padding: 0;
+          color: var(--text-faint);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          text-decoration: underline;
+        }
+        .link-btn:hover { color: var(--heart); }
+        .src-badge {
+          position: absolute;
+          bottom: 8px;
+          left: 8px;
+          padding: 4px 9px;
+          border-radius: var(--r-full);
+          background: var(--glass-strong);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          color: var(--text);
+          font-size: 11px;
+          font-weight: 700;
+          border: 1px solid var(--border);
+        }
         .field { display: flex; flex-direction: column; gap: 7px; }
         .label { font-size: 13px; font-weight: 600; color: var(--text-soft); }
         .field input {
