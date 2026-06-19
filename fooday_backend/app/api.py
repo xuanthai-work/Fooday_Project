@@ -1,6 +1,7 @@
 import json
 
-from fastapi import APIRouter
+import httpx
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from google.genai import types
 
@@ -87,3 +88,32 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
             action=None,
             suggested_dishes=[],
         )
+
+
+@router.get("/dish-image")
+def dish_image(q: str = Query(..., min_length=1)):
+    """Proxy Unsplash search so the access key stays server-side."""
+    if not config.UNSPLASH_ACCESS_KEY:
+        return {"images": []}
+    try:
+        r = httpx.get(
+            "https://api.unsplash.com/search/photos",
+            params={"query": q, "per_page": 4, "orientation": "squarish"},
+            headers={"Authorization": f"Client-ID {config.UNSPLASH_ACCESS_KEY}"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        results = r.json().get("results", [])
+        return {
+            "images": [
+                {
+                    "url": x["urls"]["regular"],
+                    "alt": x.get("alt_description") or q,
+                    "credit": x.get("user", {}).get("name", "Unsplash"),
+                }
+                for x in results
+            ]
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[dish-image] error: {exc}")
+        return {"images": []}

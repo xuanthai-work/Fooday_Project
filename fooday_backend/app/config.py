@@ -13,6 +13,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
 supabase: Client | None = (
     create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
