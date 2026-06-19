@@ -311,7 +311,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
             background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
             box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
         }
-        .chip:hover {
+        .chip:hover:not(.active) {
           transform: translateY(-2px);
           border-color: var(--primary);
           color: var(--primary-strong);

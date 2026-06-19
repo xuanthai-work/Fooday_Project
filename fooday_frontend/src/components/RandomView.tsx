@@ -193,7 +193,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
             box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
         }
-        .chip:hover:not(:disabled) {
+        .chip:hover:not(:disabled):not(.active) {
           transform: translateY(-2px);
           border-color: var(--primary);
           color: var(--primary-strong);
