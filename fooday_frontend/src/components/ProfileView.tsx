@@ -138,8 +138,8 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                     className="fav-img"
                   />
                   <div className="fav-info">
-                    <h4 className="fav-name">{item.name}</h4>
-                    <span className="fav-place">{item.restaurant}</span>
+                    <h4 className="fav-name">{item.restaurant}</h4>
+                    <span className="fav-place">{item.name}</span>
                     <span className="fav-rating">
                       <Star size={12} fill="var(--star)" color="var(--star)" />
                       {item.rating.toFixed(1)}

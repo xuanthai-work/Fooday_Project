@@ -137,8 +137,8 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                   </button>
                 </div>
                 <div className="card-body">
-                  <h3 className="card-name">{item.name}</h3>
-                  <p className="card-place">{item.restaurant}</p>
+                  <h3 className="card-name">{item.restaurant}</h3>
+                  <p className="card-place">{item.name}</p>
                   <div className="card-foot">
                     <span className="rating">
                       <Star size={13} fill="var(--star)" color="var(--star)" />

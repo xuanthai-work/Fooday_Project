@@ -100,8 +100,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
               {result && <span className="reel-badge">You should eat</span>}
             </div>
             <div className="reel-info">
-              <h2 className="reel-name">{display.name}</h2>
-              <p className="reel-place">{display.restaurant}</p>
+              <h2 className="reel-name">{display.restaurant}</h2>
+              <p className="reel-place">{display.name}</p>
               <span className="reel-rating">
                 <Star size={14} fill="var(--star)" color="var(--star)" />
                 {display.rating.toFixed(1)}
