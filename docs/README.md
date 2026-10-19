@@ -10,6 +10,9 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-19-redesign-detail-modal-inline-address-and-ai-pill.md](tasks/2026-10-19-redesign-detail-modal-inline-address-and-ai-pill.md) | Redesign Detail Modal — Inline Address Link, AI Pill Button & Remove Bottom Bar | 2026-10-19 | ✅ PASS |
+| [2026-10-19-move-food-type-to-card-tag.md](tasks/2026-10-19-move-food-type-to-card-tag.md) | Move Food Type to Top-Left Glass Tag on Food Cards | 2026-10-19 | ✅ PASS |
+| [2026-10-19-reviews-and-comments-section.md](tasks/2026-10-19-reviews-and-comments-section.md) | Expandable Full-Screen Modal & YouTube-Style Reviews/Comments Section | 2026-10-19 | ✅ PASS |
 | [2026-10-19-fix-styled-jsx-motion-conflict.md](tasks/2026-10-19-fix-styled-jsx-motion-conflict.md) | Fix Modal Styling & Click Interaction (Eliminate styled-jsx & motion conflict) | 2026-10-19 | ✅ PASS |
 | [2026-10-19-fix-modal-mounting-and-style-placement.md](tasks/2026-10-19-fix-modal-mounting-and-style-placement.md) | Fix Modal Mounting and Style JSX Placement | 2026-10-19 | ✅ PASS |
 | [2026-10-19-fix-dish-detail-modal-not-rendering.md](tasks/2026-10-19-fix-dish-detail-modal-not-rendering.md) | Fix DishDetailModal Not Rendering with AnimatePresence & Portal | 2026-10-19 | ✅ PASS |

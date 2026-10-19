@@ -214,3 +214,49 @@ values
   ('do-thai-mr-tuktuk', 'Đồ Thái', 'Foods', 'Mr. TukTuk', 5.0, 'https://images.unsplash.com/photo-1675150277436-9c7348972c11?auto=format&fit=crop&w=600&q=80', null, 'Search on GG Maps', null, null),
   ('do-thai-thai-umee', 'Đồ Thái', 'Foods', 'Thai Umee', 0.0, 'https://images.unsplash.com/photo-1675150277436-9c7348972c11?auto=format&fit=crop&w=600&q=80', null, 'Search on GG Maps', null, null)
 on conflict (slug) do nothing;
+
+-- 6. BANG REVIEWS (Danh gia & Binh luan mon an) ------------------------------
+create table if not exists public.reviews (
+  id         bigint generated always as identity primary key,
+  food_id    bigint not null references public.foods (id) on delete cascade,
+  user_id    uuid references auth.users (id) on delete cascade default auth.uid(),
+  user_name  text not null,
+  rating     int not null default 5 check (rating >= 1 and rating <= 5),
+  comment    text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists reviews_food_id_created_at_idx
+  on public.reviews (food_id, created_at desc);
+
+alter table public.reviews enable row level security;
+
+drop policy if exists "reviews_readable_by_everyone" on public.reviews;
+create policy "reviews_readable_by_everyone"
+  on public.reviews for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "reviews_insert_authenticated" on public.reviews;
+create policy "reviews_insert_authenticated"
+  on public.reviews for insert
+  to authenticated
+  with check (true);
+
+drop policy if exists "reviews_delete_own" on public.reviews;
+create policy "reviews_delete_own"
+  on public.reviews for delete
+  to authenticated
+  using (user_id = auth.uid());
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'reviews'
+  ) then
+    alter publication supabase_realtime add table public.reviews;
+  end if;
+end $$;

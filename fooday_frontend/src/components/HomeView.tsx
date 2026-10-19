@@ -134,6 +134,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                     className="card-img"
                     style={{ objectFit: 'cover' }}
                   />
+                  {item.name && <span className="card-type-tag">{item.name}</span>}
                   {item.tag && <span className="card-tag glass">{item.tag}</span>}
                   <button
                     onClick={(e) => {
@@ -153,7 +154,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                 </div>
                 <div className="card-body">
                   <h3 className="card-name">{item.restaurant}</h3>
-                  <p className="card-place">{item.name}</p>
                   <div className="card-foot">
                     <span className="rating">
                       <Star size={13} fill="var(--star)" color="var(--star)" />
@@ -430,10 +430,32 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         .card:hover .card-img {
           transform: scale(1.08);
         }
+        .card-type-tag {
+          position: absolute;
+          top: 8px;
+          left: 8px;
+          z-index: 2;
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #fff;
+          background: rgba(15, 23, 42, 0.65);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: var(--r-full);
+          padding: 4px 10px;
+          max-width: calc(100% - 64px);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+          pointer-events: none;
+        }
         .card-tag {
           position: absolute;
           top: 8px;
           left: 8px;
+          z-index: 2;
           font-size: 0.65rem;
           font-weight: 700;
           letter-spacing: 0.02em;
@@ -446,10 +468,14 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           overflow: hidden;
           text-overflow: ellipsis;
         }
+        .card-type-tag + .card-tag {
+          top: 38px;
+        }
         .fav {
           position: absolute;
-          top: 6px;
-          right: 6px;
+          top: 8px;
+          right: 8px;
+          z-index: 2;
           width: 44px;
           height: 44px;
           border-radius: var(--r-full);
@@ -482,14 +508,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           font-size: clamp(0.875rem, 3.5vw, 0.9375rem);
           font-weight: 700;
           color: var(--text);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .card-place {
-          font-size: 0.78125rem;
-          color: var(--text-soft);
-          margin-top: 2px;
+          margin-bottom: 8px;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
