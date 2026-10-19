@@ -546,19 +546,31 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           z-index: 2;
           font-size: 0.75rem;
           font-weight: 700;
-          color: #fff;
-          background: rgba(32, 20, 12, 0.68);
+          color: var(--primary-strong);
+          background: color-mix(in srgb, var(--surface) 88%, var(--primary) 12%);
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
-          border: 1px solid rgba(255, 255, 255, 0.2);
+          border: 1px solid var(--primary-soft-2);
           border-radius: var(--r-full);
           padding: 4px 10px;
           max-width: calc(100% - 64px);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10), 0 0 12px var(--primary-soft);
           pointer-events: none;
+        }
+        :global(:root[data-theme="dark"]) .card-type-tag {
+          background: rgba(28, 24, 21, 0.90);
+          color: var(--primary);
+          border-color: var(--primary-soft-2);
+        }
+        @media (prefers-color-scheme: dark) {
+          :global(:root:not([data-theme="light"])) .card-type-tag {
+            background: rgba(28, 24, 21, 0.90);
+            color: var(--primary);
+            border-color: var(--primary-soft-2);
+          }
         }
         .card-tag {
           position: absolute;
