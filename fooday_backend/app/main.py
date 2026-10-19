@@ -4,12 +4,13 @@ import uvicorn
 
 from app.api import router as chat_router
 
-app = FastAPI(title="What To Eat Today API")
+app = FastAPI(title="Fooday API")
 
-# Allow any origin/method/header so the web and mobile clients can call the API.
+# Restrict CORS to the known frontend origins. A wildcard origin combined with
+# allow_credentials=True is rejected/insecure, so list the dev origins explicitly.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

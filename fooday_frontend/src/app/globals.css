@@ -194,6 +194,11 @@ button {
   font-family: inherit;
 }
 
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
 /* Kill the square tap-highlight flash on touch devices (ignores border-radius) */
 button,
 a,
@@ -286,6 +291,53 @@ textarea,
   }
 }
 
+/* ---- Bottom Navigation Item - Mobile Vertical Stack ----
+   Lives globally (not styled-jsx) because styled-jsx can't attach its hashed
+   scope class to the intrinsic <a> that next/link renders, so scoped
+   `.nav-item` rules would be dropped by the browser. */
+.bottom-nav .nav-item {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  height: 52px !important;
+  padding: 0 8px !important;
+  text-decoration: none !important;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: var(--r-md);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.bottom-nav .nav-item.active {
+  color: var(--primary-strong) !important;
+  background: var(--primary-soft) !important;
+}
+
+.bottom-nav .nav-item:hover {
+  color: var(--text-soft);
+}
+
+.bottom-nav .nav-item svg {
+  flex-shrink: 0;
+  transition: transform var(--dur) var(--ease);
+}
+
+.bottom-nav .nav-item:hover svg {
+  transform: translateY(-2px);
+}
+
+.bottom-nav .nav-label {
+  display: block !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  line-height: 1 !important;
+  text-decoration: none !important;
+  text-align: center;
+}
+
 /* ---- Desktop / large landscape: full-bleed app with a left sidebar ---- */
 @media (min-width: 1024px) {
   body {
@@ -366,17 +418,20 @@ textarea,
     display: none;
   }
   .app-shell--app .bottom-nav .nav-item {
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 14px;
-    height: 50px;
-    padding: 0 16px;
+    /* higher specificity + !important so the desktop row layout wins over
+       the mobile base rule (which uses !important for vertical stacking) */
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    gap: 14px !important;
+    height: 50px !important;
+    padding: 0 16px !important;
   }
   .app-shell--app .bottom-nav .nav-item.active {
     background: var(--primary-soft);
   }
   .app-shell--app .bottom-nav .nav-label {
-    font-size: 14.5px;
+    font-size: 14.5px !important;
   }
 }
 

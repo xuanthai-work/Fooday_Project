@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Inter } from "next/font/google";
 import StyledJsxRegistry from "./registry";
+import AppShell from "@/components/AppShell";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -48,7 +49,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <StyledJsxRegistry>{children}</StyledJsxRegistry>
+        <StyledJsxRegistry>
+          <AppShell>{children}</AppShell>
+        </StyledJsxRegistry>
       </body>
     </html>
   );

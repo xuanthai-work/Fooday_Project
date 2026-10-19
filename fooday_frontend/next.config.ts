@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Hide the floating dev indicator badge so it can't cover the bottom-left nav tab.
+  devIndicators: false,
   images: {
     remotePatterns: [
       {

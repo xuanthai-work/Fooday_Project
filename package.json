@@ -1,0 +1,11 @@
+{
+  "name": "fooday-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "watch:task": "powershell -ExecutionPolicy Bypass -File ./scripts/watch-and-inject.ps1",
+    "lint:frontend": "npm --prefix fooday_frontend run lint",
+    "build:frontend": "npm --prefix fooday_frontend run build",
+    "dev:frontend": "npm --prefix fooday_frontend run dev"
+  }
+}

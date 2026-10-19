@@ -1,0 +1,34 @@
+# Tooling / AI assistants
+.codegraph/
+.gemini/
+.claude/
+justdoit.md
+
+# Dependencies
+node_modules/
+*/node_modules/
+.venv/
+*/.venv/
+
+# Build outputs
+.next/
+*/.next/
+dist/
+build/
+*.egg-info/
+
+# Secrets & environment files (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+
+# Misc OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.log

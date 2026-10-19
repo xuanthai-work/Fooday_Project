@@ -50,6 +50,8 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
         foods = (
             config.supabase.table("foods")
             .select("name, category, restaurant, rating, tag")
+            .order("rating", desc=True)
+            .limit(30)
             .execute()
             .data
             or []
