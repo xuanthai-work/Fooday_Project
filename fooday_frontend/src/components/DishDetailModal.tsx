@@ -402,7 +402,7 @@ export default function DishDetailModal({
           display: flex;
           align-items: flex-end;
           justify-content: center;
-          background: rgba(10, 10, 25, 0.55);
+          background: rgba(20, 14, 10, 0.58);
           backdrop-filter: blur(4px);
           -webkit-backdrop-filter: blur(4px);
           animation: overlayIn 0.24s ease both;
@@ -611,13 +611,15 @@ export default function DishDetailModal({
           font-weight: 700;
           white-space: nowrap;
           cursor: pointer;
+          box-shadow: 0 0 18px rgba(255, 107, 53, 0.18);
           transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-            transform var(--dur-fast) var(--ease);
+            transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
         }
         .ask-ai-pill:hover {
           background: var(--grad-primary);
           color: #fff;
           transform: translateY(-1px);
+          box-shadow: var(--shadow-primary);
         }
         .ask-ai-pill:active {
           transform: scale(0.95);

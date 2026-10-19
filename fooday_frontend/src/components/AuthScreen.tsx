@@ -409,7 +409,7 @@ export default function AuthScreen() {
 
         .submit-btn:hover:not(:disabled) {
           transform: translateY(-2px);
-          box-shadow: 0 16px 32px -8px rgba(110, 120, 240, 0.6);
+          box-shadow: 0 16px 32px -8px rgba(232, 89, 36, 0.55);
         }
 
         .submit-btn:active:not(:disabled) {

@@ -28,7 +28,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#8E97FD",
+  themeColor: "#FF6B35",
 };
 
 // Applies a saved theme before first paint so dark mode never flashes.

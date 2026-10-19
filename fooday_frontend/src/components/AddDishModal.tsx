@@ -305,7 +305,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           align-items: center;
           justify-content: center;
           padding: 16px;
-          background: rgba(10, 10, 25, 0.55);
+          background: rgba(20, 14, 10, 0.58);
           backdrop-filter: blur(4px);
           animation: fadeIn 0.2s var(--ease);
         }

@@ -547,7 +547,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           font-size: 0.75rem;
           font-weight: 700;
           color: #fff;
-          background: rgba(15, 23, 42, 0.65);
+          background: rgba(32, 20, 12, 0.68);
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
           border: 1px solid rgba(255, 255, 255, 0.2);

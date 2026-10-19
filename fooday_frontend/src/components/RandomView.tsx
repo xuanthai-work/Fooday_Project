@@ -350,7 +350,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           padding-block: 18px;
           border-radius: var(--r-lg);
           border: 1px solid rgba(234, 179, 8, 0.35);
-          background: linear-gradient(180deg, #171b25 0%, #0b0d12 55%, #07080c 100%);
+          background: linear-gradient(180deg, #241c16 0%, #15110e 55%, #0c0907 100%);
           box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.65),
             inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 14px 34px rgba(0, 0, 0, 0.28);
         }
@@ -393,7 +393,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           left: 7px;
           padding: 3px 8px;
           border-radius: var(--r-full);
-          background: rgba(7, 8, 12, 0.72);
+          background: rgba(12, 9, 7, 0.72);
           color: #f8fafc;
           font-size: 10px;
           font-weight: 700;
@@ -446,11 +446,11 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         }
         .fade-left {
           left: 0;
-          background: linear-gradient(to right, #0b0d12 12%, rgba(11, 13, 18, 0));
+          background: linear-gradient(to right, #15110e 12%, rgba(21, 17, 14, 0));
         }
         .fade-right {
           right: 0;
-          background: linear-gradient(to left, #0b0d12 12%, rgba(11, 13, 18, 0));
+          background: linear-gradient(to left, #15110e 12%, rgba(21, 17, 14, 0));
         }
         .center-ticker {
           position: absolute;
@@ -494,16 +494,39 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         .roulette-empty {
           padding: 46px 20px;
           text-align: center;
-          color: rgba(248, 250, 252, 0.65);
+          color: rgba(247, 244, 238, 0.65);
           font-size: 14px;
         }
         .winner-block {
+          position: relative;
           width: 100%;
           margin-top: 20px;
           display: flex;
           flex-direction: column;
           align-items: center;
           animation: fadeUp 0.45s var(--ease);
+        }
+        .winner-block::before {
+          content: '';
+          position: absolute;
+          top: -28px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: min(100%, 420px);
+          height: 220px;
+          background: radial-gradient(
+            ellipse at top,
+            rgba(251, 191, 36, 0.22),
+            transparent 68%
+          );
+          pointer-events: none;
+          z-index: 0;
+        }
+        .winner-congrats,
+        .winner-card,
+        .rnd-actions {
+          position: relative;
+          z-index: 1;
         }
         .winner-congrats {
           font-size: 13px;

@@ -179,6 +179,13 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             .nav-brand {
               display: none;
             }
+            .nav-brand-text {
+              font-weight: 800;
+              background: var(--grad-primary);
+              -webkit-background-clip: text;
+              background-clip: text;
+              color: transparent;
+            }
             .nav-cluster {
               flex: 1;
               display: flex;
@@ -214,6 +221,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             :global(.nav-item.active) {
               color: var(--primary-strong) !important;
               background: var(--primary-soft) !important;
+              box-shadow: inset 0 0 0 1px var(--primary-soft-2) !important;
+            }
+            :global(.nav-item.active svg) {
+              filter: drop-shadow(0 3px 8px var(--primary-soft-2));
             }
             .nav-fab {
               flex: 0 0 auto;

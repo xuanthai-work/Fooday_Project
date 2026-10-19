@@ -21,6 +21,13 @@ create table if not exists public.foods (
   created_at   timestamptz not null default now()
 );
 
+-- Bảo đảm các cột mở rộng luôn tồn tại ngay cả khi bảng đã được tạo trước đó
+alter table public.foods
+  add column if not exists address      text,
+  add column if not exists opening_time text,
+  add column if not exists review_note  text,
+  add column if not exists created_by   uuid references auth.users (id) on delete set null default auth.uid();
+
 -- Bật Row Level Security (RLS) cho foods
 alter table public.foods enable row level security;
 
@@ -116,6 +123,15 @@ create policy "dish_images_insert_signed_up"
 
 
 -- 5. NẠP 94 MÓN ĂN VIỆT NAM THỰC TẾ VÀO CATALOG -----------------------------
+-- Xóa 14 món demo tiếng Anh nếu còn sót lại từ bản seed cũ
+delete from public.foods where slug in (
+  'spicy-beef-ramen', 'classic-beef-burger', 'crispy-fried-chicken',
+  'rainbow-poke-bowl', 'wood-fired-pizza', 'salmon-sushi-platter',
+  'garden-buddha-bowl', 'grilled-herb-plate', 'iced-matcha-latte',
+  'mixed-berry-smoothie', 'fresh-orange-juice', 'caramel-latte',
+  'choco-chip-cookies', 'glazed-donuts'
+);
+
 insert into public.foods
   (slug, name, category, restaurant, rating, image_url, tag, address, opening_time, review_note)
 values
@@ -213,9 +229,18 @@ values
   ('do-han-hansik-sarang', 'Đồ Hàn', 'Foods', 'Hansik Sarang', 0.0, 'https://images.unsplash.com/photo-1498654896293-37aacf113fd9?auto=format&fit=crop&w=600&q=80', null, '45 Giải Phóng - Hai Bà Trưng', null, null),
   ('do-thai-mr-tuktuk', 'Đồ Thái', 'Foods', 'Mr. TukTuk', 5.0, 'https://images.unsplash.com/photo-1675150277436-9c7348972c11?auto=format&fit=crop&w=600&q=80', null, 'Search on GG Maps', null, null),
   ('do-thai-thai-umee', 'Đồ Thái', 'Foods', 'Thai Umee', 0.0, 'https://images.unsplash.com/photo-1675150277436-9c7348972c11?auto=format&fit=crop&w=600&q=80', null, 'Search on GG Maps', null, null)
-on conflict (slug) do nothing;
+on conflict (slug) do update set
+  name = excluded.name,
+  category = excluded.category,
+  restaurant = excluded.restaurant,
+  rating = excluded.rating,
+  image_url = excluded.image_url,
+  tag = excluded.tag,
+  address = excluded.address,
+  opening_time = excluded.opening_time,
+  review_note = excluded.review_note;
 
--- 6. BANG REVIEWS (Danh gia & Binh luan mon an) ------------------------------
+-- 6. BẢNG REVIEWS (Đánh giá & Bình luận món ăn) ------------------------------
 create table if not exists public.reviews (
   id         bigint generated always as identity primary key,
   food_id    bigint not null references public.foods (id) on delete cascade,
@@ -231,24 +256,28 @@ create index if not exists reviews_food_id_created_at_idx
 
 alter table public.reviews enable row level security;
 
+-- Cho phép tất cả mọi người đọc bình luận
 drop policy if exists "reviews_readable_by_everyone" on public.reviews;
 create policy "reviews_readable_by_everyone"
   on public.reviews for select
   to anon, authenticated
   using (true);
 
+-- Cho phép cả khách vãng lai và user đăng bình luận
 drop policy if exists "reviews_insert_authenticated" on public.reviews;
 create policy "reviews_insert_authenticated"
   on public.reviews for insert
-  to authenticated
+  to anon, authenticated
   with check (true);
 
+-- Chỉ chính chủ mới được xóa bình luận của mình
 drop policy if exists "reviews_delete_own" on public.reviews;
 create policy "reviews_delete_own"
   on public.reviews for delete
   to authenticated
   using (user_id = auth.uid());
 
+-- Realtime cho bảng reviews và bảng foods
 do $$
 begin
   if not exists (
@@ -258,5 +287,14 @@ begin
       and tablename = 'reviews'
   ) then
     alter publication supabase_realtime add table public.reviews;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'foods'
+  ) then
+    alter publication supabase_realtime add table public.foods;
   end if;
 end $$;
