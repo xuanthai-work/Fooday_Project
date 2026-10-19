@@ -10,6 +10,9 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-19-mood-task-categories-dashboard.md](tasks/2026-10-19-mood-task-categories-dashboard.md) | Redesign Dashboard Categories by Real-World Food Mood & Task | 2026-10-19 | ✅ PASS |
+| [2026-10-19-smart-search-with-instant-tags.md](tasks/2026-10-19-smart-search-with-instant-tags.md) | Smart Search with Instant Tags & Multi-Field Accent-Insensitive Matching | 2026-10-19 | ✅ PASS |
+| [2026-10-19-csgo-style-roulette-random-view.md](tasks/2026-10-19-csgo-style-roulette-random-view.md) | CS:GO-Style Case Opening Roulette for Random Food View | 2026-10-19 | ✅ PASS |
 | [2026-10-19-redesign-detail-modal-inline-address-and-ai-pill.md](tasks/2026-10-19-redesign-detail-modal-inline-address-and-ai-pill.md) | Redesign Detail Modal — Inline Address Link, AI Pill Button & Remove Bottom Bar | 2026-10-19 | ✅ PASS |
 | [2026-10-19-move-food-type-to-card-tag.md](tasks/2026-10-19-move-food-type-to-card-tag.md) | Move Food Type to Top-Left Glass Tag on Food Cards | 2026-10-19 | ✅ PASS |
 | [2026-10-19-reviews-and-comments-section.md](tasks/2026-10-19-reviews-and-comments-section.md) | Expandable Full-Screen Modal & YouTube-Style Reviews/Comments Section | 2026-10-19 | ✅ PASS |

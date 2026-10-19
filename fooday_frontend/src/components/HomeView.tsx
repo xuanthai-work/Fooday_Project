@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { Search, Heart, Star, Bell, Sparkles } from 'lucide-react';
-import { useFoods, CATEGORY_FILTERS, type CategoryFilter, type Food } from '@/hooks/useFoods';
+import { useFoods, type Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useTranslation } from '@/i18n/LanguageContext';
 import ThemeToggle from './ThemeToggle';
@@ -13,24 +13,109 @@ interface HomeViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
 }
 
+const normalize = (str: string) =>
+  str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .trim();
+
+export type MoodTaskCategory =
+  | 'All'
+  | 'OfficeLunch'
+  | 'Gathering'
+  | 'Healthy'
+  | 'WorkCafe'
+  | 'AfternoonTea'
+  | 'Romantic';
+
+interface MoodTaskOption {
+  id: MoodTaskCategory;
+  labelKey:
+    | 'all'
+    | 'officeLunch'
+    | 'gathering'
+    | 'healthy'
+    | 'workCafe'
+    | 'afternoonTea'
+    | 'romantic';
+  icon: string;
+  keywords: string[];
+}
+
+const MOOD_TASKS: MoodTaskOption[] = [
+  { id: 'All', labelKey: 'all', icon: '🌟', keywords: [] },
+  {
+    id: 'OfficeLunch',
+    labelKey: 'officeLunch',
+    icon: '💼',
+    keywords: ['cơm', 'bún', 'phở', 'mì', 'hủ tiếu', 'bánh mì', 'xôi', 'trưa', 'lunch', 'cơm tấm'],
+  },
+  {
+    id: 'Gathering',
+    labelKey: 'gathering',
+    icon: '🍻',
+    keywords: ['lẩu', 'nướng', 'bbq', 'buffet', 'nhậu', 'tụ tập', 'bia', 'hải sản'],
+  },
+  {
+    id: 'Healthy',
+    labelKey: 'healthy',
+    icon: '🥗',
+    keywords: ['chay', 'vegan', 'salad', 'healthy', 'clean', 'thanh đạm', 'rau'],
+  },
+  {
+    id: 'WorkCafe',
+    labelKey: 'workCafe',
+    icon: '☕',
+    keywords: ['cà phê', 'cafe', 'coffee', 'làm việc', 'yên tĩnh', 'trà', 'tea'],
+  },
+  {
+    id: 'AfternoonTea',
+    labelKey: 'afternoonTea',
+    icon: '🧋',
+    keywords: ['trà sữa', 'ăn vặt', 'chè', 'snack', 'bánh', 'ốc', 'xiên', 'trà chiều'],
+  },
+  {
+    id: 'Romantic',
+    labelKey: 'romantic',
+    icon: '🍷',
+    keywords: ['hẹn hò', 'ấm cúng', 'view đẹp', 'lãng mạn', 'steak', 'bò bít tết', 'pizza', 'sushi', 'rượu', 'romantic'],
+  },
+];
+
+function itemMatchesMood(item: Food, mood: MoodTaskOption): boolean {
+  if (mood.id === 'All') return true;
+  if (mood.id === 'AfternoonTea' && item.category === 'Snacks') return true;
+  const fields = [item.name, item.restaurant, item.tag, item.review_note];
+  return mood.keywords.some((keyword) => {
+    const k = normalize(keyword);
+    return fields.some((field) => field != null && normalize(field).includes(k));
+  });
+}
+
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { t } = useTranslation();
   const { foods, loading } = useFoods();
   const { favorites, toggleFavorite } = useFavorites();
-  const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('All');
+  const [selectedMood, setSelectedMood] = useState<MoodTaskCategory>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
 
+  const currentMoodOption = MOOD_TASKS.find((m) => m.id === selectedMood) ?? MOOD_TASKS[0];
+
   const filteredFoods = foods.filter((item) => {
-    const matchesCategory =
-      selectedCategory === 'All' || item.category === selectedCategory;
-    const q = searchQuery.trim().toLowerCase();
+    const matchesMood = itemMatchesMood(item, currentMoodOption);
+    const q = normalize(searchQuery);
     const matchesSearch =
       q === '' ||
-      item.name.toLowerCase().includes(q) ||
-      item.restaurant.toLowerCase().includes(q);
-    return matchesCategory && matchesSearch;
+      [item.name, item.restaurant, item.tag, item.address, item.review_note].some(
+        (field) => field != null && normalize(field).includes(q),
+      );
+    return matchesMood && matchesSearch;
   });
+
+  const trimmedQuery = searchQuery.trim();
 
   return (
     <div className="home animate-fade-in">
@@ -73,19 +158,24 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         )}
       </div>
 
-      {/* Categories */}
-      <div className="categories" role="tablist" aria-label="Food categories">
-        {CATEGORY_FILTERS.map((category) => {
-          const isActive = selectedCategory === category;
+      {trimmedQuery !== '' && (
+        <p className="search-status">{t.home.foundResults(filteredFoods.length)}</p>
+      )}
+
+      {/* Mood / Task categories */}
+      <div className="mood-categories" role="tablist" aria-label="Nhu cầu ăn uống">
+        {MOOD_TASKS.map((task) => {
+          const isActive = selectedMood === task.id;
           return (
             <button
-              key={category}
+              key={task.id}
               role="tab"
               aria-selected={isActive}
-              onClick={() => setSelectedCategory(category)}
-              className={`chip ${isActive ? 'active' : ''}`}
+              onClick={() => setSelectedMood(task.id)}
+              className={`chip mood-chip ${isActive ? 'active' : ''}`}
             >
-              {t.home.categories[category]}
+              <span className="mood-icon">{task.icon}</span>
+              <span>{t.home.moods[task.labelKey]}</span>
             </button>
           );
         })}
@@ -94,7 +184,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
       {/* Section label */}
       <div className="section-row">
         <h2 className="section-title">
-          {selectedCategory === 'All' ? t.home.popularPicks : t.home.categories[selectedCategory]}
+          {selectedMood === 'All' ? t.home.popularPicks : t.home.moods[currentMoodOption.labelKey]}
         </h2>
         <span className="section-count">{t.home.dishCount(filteredFoods.length)}</span>
       </div>
@@ -176,8 +266,14 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         </div>
       ) : (
         <div className="empty">
-          <div className="empty-emoji">🍽️</div>
-          <p className="empty-title">{t.home.noResults}</p>
+          <div className="empty-icon">
+            <Search size={26} />
+          </div>
+          <p className="empty-title">
+            {trimmedQuery !== ''
+              ? `${t.home.noResultsFound} “${trimmedQuery}”`
+              : t.home.noResults}
+          </p>
           <span className="empty-sub">{t.home.noResultsSub}</span>
         </div>
       )}
@@ -303,7 +399,13 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           background: var(--primary-soft-2);
           color: var(--primary-strong);
         }
-        .categories {
+        .search-status {
+          margin: -8px 2px 12px;
+          font-size: 0.8125rem;
+          font-weight: 600;
+          color: var(--primary-strong);
+        }
+        .mood-categories {
           display: flex;
           gap: 9px;
           overflow-x: auto;
@@ -311,7 +413,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           margin-bottom: 22px;
           scrollbar-width: none;
         }
-        .categories::-webkit-scrollbar {
+        .mood-categories::-webkit-scrollbar {
           display: none;
         }
         .chip {
@@ -320,7 +422,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           align-items: center;
           justify-content: center;
           min-height: 44px;
-          padding: 0 20px;
+          padding: 0 18px;
           border-radius: var(--r-full);
           border: 1px solid var(--border);
           background: var(--surface-2);
@@ -332,6 +434,13 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           transition: transform var(--dur-fast) var(--ease),
             background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
             box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+        }
+        .mood-chip {
+          gap: 7px;
+        }
+        .mood-icon {
+          font-size: 1rem;
+          line-height: 1;
         }
         .chip:hover:not(.active) {
           transform: translateY(-2px);
@@ -563,9 +672,16 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           text-align: center;
           padding: 56px 20px;
         }
-        .empty-emoji {
-          font-size: 2.5rem;
-          margin-bottom: 12px;
+        .empty-icon {
+          display: grid;
+          place-items: center;
+          width: 56px;
+          height: 56px;
+          border-radius: var(--r-full);
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          color: var(--text-faint);
+          margin-bottom: 14px;
         }
         .empty-title {
           font-size: 1rem;
