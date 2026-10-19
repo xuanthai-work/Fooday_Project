@@ -5,16 +5,24 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, Sparkles, User as UserIcon, Plus, Dices } from 'lucide-react';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { FavoritesProvider } from '@/hooks/useFavorites';
 import AuthScreen from '@/components/AuthScreen';
 import AddDishModal from '@/components/AddDishModal';
+import { LanguageProvider, useTranslation } from '@/i18n/LanguageContext';
+import type { Translation } from '@/i18n/translations';
 
 type TabType = 'home' | 'chat' | 'random' | 'profile';
 
-const TABS: { id: TabType; label: string; href: string; icon: React.ElementType }[] = [
-  { id: 'home', label: 'Home', href: '/', icon: Home },
-  { id: 'chat', label: 'AI Chat', href: '/chat', icon: Sparkles },
-  { id: 'random', label: 'Random', href: '/random', icon: Dices },
-  { id: 'profile', label: 'Profile', href: '/profile', icon: UserIcon },
+const TABS: {
+  id: TabType;
+  labelKey: keyof Translation['nav'];
+  href: string;
+  icon: React.ElementType;
+}[] = [
+  { id: 'home', labelKey: 'home', href: '/', icon: Home },
+  { id: 'chat', labelKey: 'chat', href: '/chat', icon: Sparkles },
+  { id: 'random', labelKey: 'random', href: '/random', icon: Dices },
+  { id: 'profile', labelKey: 'profile', href: '/profile', icon: UserIcon },
 ];
 
 interface AppNav {
@@ -36,6 +44,7 @@ function tabFromPathname(pathname: string): TabType {
 
 function ShellInner({ children }: { children: React.ReactNode }) {
   const { session, loading, user } = useAuth();
+  const { t } = useTranslation();
   const pathname = usePathname();
   const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
@@ -112,7 +121,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="nav-cluster">
-            {TABS.slice(0, 2).map(({ id, label, href, icon: Icon }) => {
+            {TABS.slice(0, 2).map(({ id, labelKey, href, icon: Icon }) => {
               const isActive = activeTab === id;
               return (
                 <Link
@@ -122,7 +131,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                   aria-current={isActive ? 'page' : undefined}
                 >
                   <Icon size={22} strokeWidth={isActive ? 2.4 : 2} />
-                  <span className="nav-label">{label}</span>
+                  <span className="nav-label">{t.nav[labelKey]}</span>
                 </Link>
               );
             })}
@@ -131,15 +140,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           <button
             className="nav-fab"
             onClick={handleAddClick}
-            aria-label="Add dish"
-            title={isGuest ? 'Sign up to add dishes' : 'Add a dish'}
+            aria-label={t.nav.addDish}
+            title={isGuest ? t.nav.addDishGuestTooltip : t.nav.addDishTooltip}
           >
             <Plus size={26} strokeWidth={2.4} />
-            <span className="nav-fab-label">Add dish</span>
+            <span className="nav-fab-label">{t.nav.addDish}</span>
           </button>
 
           <div className="nav-cluster">
-            {TABS.slice(2).map(({ id, label, href, icon: Icon }) => {
+            {TABS.slice(2).map(({ id, labelKey, href, icon: Icon }) => {
               const isActive = activeTab === id;
               return (
                 <Link
@@ -149,13 +158,13 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                   aria-current={isActive ? 'page' : undefined}
                 >
                   <Icon size={22} strokeWidth={isActive ? 2.4 : 2} />
-                  <span className="nav-label">{label}</span>
+                  <span className="nav-label">{t.nav[labelKey]}</span>
                 </Link>
               );
             })}
           </div>
 
-          {showHint && <span className="nav-hint">Sign up to add dishes ✨</span>}
+          {showHint && <span className="nav-hint">{t.nav.guestHint}</span>}
 
           <style jsx>{`
             .bottom-nav {
@@ -267,8 +276,12 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <AuthProvider>
-      <ShellInner>{children}</ShellInner>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <FavoritesProvider>
+          <ShellInner>{children}</ShellInner>
+        </FavoritesProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }

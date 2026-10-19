@@ -5,12 +5,14 @@ import Image from 'next/image';
 import { Dices, Star, Heart, Sparkles, RotateCw } from 'lucide-react';
 import { useFoods, CATEGORY_FILTERS, CategoryFilter, Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 interface RandomViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
 }
 
 export default function RandomView({ onNavigateToChat }: RandomViewProps) {
+  const { t } = useTranslation();
   const { foods } = useFoods();
   const { favorites, toggleFavorite } = useFavorites();
   const [category, setCategory] = useState<CategoryFilter>('All');
@@ -65,12 +67,12 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     <div className="random animate-fade-in">
       <header className="rnd-head">
         <span className="eyebrow">
-          <Dices size={13} /> Can&apos;t decide?
+          <Dices size={13} /> {t.random.eyebrow}
         </span>
-        <h1 className="rnd-title">Random pick</h1>
+        <h1 className="rnd-title">{t.random.title}</h1>
       </header>
 
-      <div className="rnd-chips" role="tablist" aria-label="Category">
+      <div className="rnd-chips" role="tablist" aria-label={t.home.categories.All}>
         {CATEGORY_FILTERS.map((c) => (
           <button
             key={c}
@@ -78,7 +80,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             onClick={() => selectCategory(c)}
             disabled={spinning}
           >
-            {c}
+            {t.home.categories[c]}
           </button>
         ))}
       </div>
@@ -96,7 +98,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                 style={{ objectFit: 'cover' }}
               />
               <div className="reel-shade" />
-              {result && <span className="reel-badge">You should eat</span>}
+              {result && <span className="reel-badge">{t.random.badge}</span>}
             </div>
             <div className="reel-info">
               <h2 className="reel-name">{display.restaurant}</h2>
@@ -108,7 +110,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             </div>
           </>
         ) : (
-          <div className="reel-empty">No dishes in this category yet.</div>
+          <div className="reel-empty">{t.random.empty}</div>
         )}
       </div>
 
@@ -119,15 +121,15 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             onClick={() => toggleFavorite(result.id)}
           >
             <Heart size={16} fill={isFav ? 'var(--heart)' : 'none'} />
-            {isFav ? 'Saved' : 'Favorite'}
+            {isFav ? t.random.saved : t.random.favorite}
           </button>
           <button
             className="act"
             onClick={() =>
-              onNavigateToChat(`Tell me more about ${result.name} from ${result.restaurant}.`)
+              onNavigateToChat(t.random.askAbout(result.name, result.restaurant))
             }
           >
-            <Sparkles size={16} /> Ask AI
+            <Sparkles size={16} /> {t.random.askAi}
           </button>
         </div>
       )}
@@ -135,11 +137,11 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
       <button className="spin-btn" onClick={spin} disabled={spinning || pool.length === 0}>
         {result ? (
           <>
-            <RotateCw size={18} /> Spin again
+            <RotateCw size={18} /> {t.random.spinAgain}
           </>
         ) : (
           <>
-            <Dices size={18} /> Surprise me
+            <Dices size={18} /> {t.random.spin}
           </>
         )}
       </button>

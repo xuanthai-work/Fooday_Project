@@ -89,10 +89,10 @@ Khi được đánh thức ở trạng thái `status: DONE`, Gemini tự động
 ### Bước 2: Chạy Verification Gates
 Chạy trực tiếp các lệnh kiểm thử của dự án:
 - **Frontend Verification**:
+  > ⚠️ **LƯU Ý QUAN TRỌNG**: Tuyệt đối **KHÔNG chạy `npm run build`** trong quá trình kiểm thử vì `next build` sẽ xóa đè thư mục `.next`, làm gãy process dev server (`npm run dev`) đang chạy dở của người dùng và sinh lỗi `ENOENT / MODULE_NOT_FOUND`. Chỉ kiểm thử bằng lint và typecheck:
   ```powershell
   npm --prefix fooday_frontend run lint
-  npx --prefix fooday_frontend tsc --noEmit
-  npm --prefix fooday_frontend run build
+  .\fooday_frontend\node_modules\.bin\tsc.cmd --project fooday_frontend\tsconfig.json --noEmit
   ```
 - **Backend Verification**:
   ```powershell
@@ -129,8 +129,8 @@ Chạy trực tiếp các lệnh kiểm thử của dự án:
 - **Frontend (`fooday_frontend`)**:
   - Dev: `npm --prefix fooday_frontend run dev`
   - Lint: `npm --prefix fooday_frontend run lint`
-  - Build: `npm --prefix fooday_frontend run build`
-  - Typecheck: `npx --prefix fooday_frontend tsc --noEmit`
+  - Typecheck: `.\fooday_frontend\node_modules\.bin\tsc.cmd --project fooday_frontend\tsconfig.json --noEmit`
+  - *(Lưu ý: Không chạy `run build` khi dev server đang chạy)*
 - **Backend (`fooday_backend`)**:
   - Dev: `cd fooday_backend; uvicorn app.main:app --host 127.0.0.1 --port 2001 --reload`
   - Syntax check: `python -m compileall -q fooday_backend/app`

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { refreshFoods, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
 import { dishImageService, DishImage } from '@/services/api';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 const slugify = (s: string) =>
   s
@@ -20,6 +21,7 @@ interface AddDishModalProps {
 }
 
 export default function AddDishModal({ onClose }: AddDishModalProps) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [name, setName] = useState('');
   const [category, setCategory] = useState<FoodCategory>('Foods');
@@ -76,7 +78,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       const { data } = supabase.storage.from('dish-images').getPublicUrl(path);
       setUploadedUrl(data.publicUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed.');
+      setError(err instanceof Error ? err.message : t.addDish.uploadFailed);
     } finally {
       setUploading(false);
     }
@@ -122,10 +124,15 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
         <header className="modal-head">
-          <h2 className="modal-title">Add a dish</h2>
-          <button className="close" onClick={onClose} aria-label="Close">
+          <h2 className="modal-title">{t.addDish.title}</h2>
+          <button className="close" onClick={onClose} aria-label={t.addDish.close}>
             <X size={20} />
           </button>
         </header>
@@ -139,27 +146,27 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
               ) : (
                 <div className="preview-empty">
                   <Sparkles size={20} />
-                  <span>Paste a URL, upload a photo, or just type a name</span>
+                  <span>{t.addDish.pasteHint}</span>
                 </div>
               )}
               {resolvedImage && (
                 <span className="src-badge">
                   {imageSource === 'url'
-                    ? 'From URL'
+                    ? t.addDish.fromUrl
                     : imageSource === 'upload'
-                      ? 'Uploaded'
-                      : 'Auto · Unsplash'}
+                      ? t.addDish.uploaded
+                      : t.addDish.auto}
                 </span>
               )}
             </div>
 
             {/* 1 · paste a URL (highest priority) */}
             <label className="field">
-              <span className="label">Image URL</span>
+              <span className="label">{t.addDish.imageUrlLabel}</span>
               <input
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="Paste a link to a photo (optional)"
+                placeholder={t.addDish.imageUrlPlaceholder}
                 inputMode="url"
               />
             </label>
@@ -173,11 +180,15 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                 disabled={uploading}
               >
                 {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-                {uploading ? 'Uploading…' : uploadedUrl ? 'Replace photo' : 'Upload a photo'}
+                {uploading
+                  ? t.addDish.uploading
+                  : uploadedUrl
+                    ? t.addDish.replacePhoto
+                    : t.addDish.uploadPhoto}
               </button>
               {uploadedUrl && (
                 <button type="button" className="link-btn" onClick={() => setUploadedUrl('')}>
-                  Remove upload
+                  {t.addDish.removeUpload}
                 </button>
               )}
               <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleUpload} />
@@ -192,7 +203,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                     key={c.url}
                     className={`thumb ${unsplashUrl === c.url ? 'active' : ''}`}
                     onClick={() => pickCandidate(c.url)}
-                    aria-label="Use this photo"
+                    aria-label={t.addDish.useThisPhoto}
                   >
                     <Image src={c.url} alt={c.alt} width={52} height={52} className="thumb-img" style={{ objectFit: 'cover' }} />
                   </button>
@@ -203,18 +214,18 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
           {/* Name */}
           <label className="field">
-            <span className="label">Dish name</span>
+            <span className="label">{t.addDish.dishNameLabel}</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Spicy Beef Ramen"
+              placeholder={t.addDish.dishNamePlaceholder}
               required
             />
           </label>
 
           {/* Category */}
           <div className="field">
-            <span className="label">Category</span>
+            <span className="label">{t.addDish.categoryLabel}</span>
             <div className="chips">
               {FOOD_CATEGORIES.map((c) => (
                 <button
@@ -223,7 +234,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                   className={`chip ${category === c ? 'active' : ''}`}
                   onClick={() => setCategory(c)}
                 >
-                  {c}
+                  {t.home.categories[c]}
                 </button>
               ))}
             </div>
@@ -231,18 +242,18 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
           {/* Restaurant */}
           <label className="field">
-            <span className="label">Restaurant</span>
+            <span className="label">{t.addDish.restaurantLabel}</span>
             <input
               value={restaurant}
               onChange={(e) => setRestaurant(e.target.value)}
-              placeholder="e.g. Noodle House"
+              placeholder={t.addDish.restaurantPlaceholder}
               required
             />
           </label>
 
           {/* Rating */}
           <div className="field">
-            <span className="label">Rating</span>
+            <span className="label">{t.addDish.ratingLabel}</span>
             <div className="stars">
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
@@ -250,7 +261,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                   key={n}
                   className="star"
                   onClick={() => setRating(n)}
-                  aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                  aria-label={t.addDish.starAria(n)}
                 >
                   <Star
                     size={22}
@@ -264,11 +275,11 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
           {/* Tag */}
           <label className="field">
-            <span className="label">Tag (optional)</span>
+            <span className="label">{t.addDish.tagLabel}</span>
             <input
               value={tag}
               onChange={(e) => setTag(e.target.value)}
-              placeholder="e.g. Trending"
+              placeholder={t.addDish.tagPlaceholder}
             />
           </label>
 
@@ -276,10 +287,10 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
           <div className="actions">
             <button type="button" className="cancel" onClick={onClose}>
-              Cancel
+              {t.addDish.cancel}
             </button>
             <button type="submit" className="submit" disabled={!canSubmit}>
-              {busy ? <Loader2 size={18} className="spin" /> : 'Add dish'}
+              {busy ? <Loader2 size={18} className="spin" /> : t.addDish.submit}
             </button>
           </div>
         </form>

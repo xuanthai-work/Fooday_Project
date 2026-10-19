@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Send, Plus, Bot } from 'lucide-react';
 import { chatService, ChatResponse } from '@/services/api';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useFoods } from '@/hooks/useFoods';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 interface Message {
   isUser: boolean;
@@ -23,25 +24,22 @@ interface ChatViewProps {
 const now = () =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-const WELCOME: Message = {
-  isUser: false,
-  message:
-    "Hi, I'm Foodie AI 👋 Tell me your mood or cravings and I'll find the perfect dish for you today.",
-  time: 'Now',
-  suggestedDishes: [
-    'Tell me more about Phở Bò',
-    'I want something spicy 🌶️',
-    'Healthy & light, please',
-    'Surprise me!',
-  ],
-  chipsVerbatim: true,
-};
-
 export default function ChatView({
   initialMessageToSend,
   onClearInitialMessage,
 }: ChatViewProps) {
-  const [messages, setMessages] = useState<Message[]>([WELCOME]);
+  const { t } = useTranslation();
+  const welcome = useMemo<Message>(
+    () => ({
+      isUser: false,
+      message: t.chat.welcome,
+      time: t.chat.now,
+      suggestedDishes: t.chat.welcomeChips,
+      chipsVerbatim: true,
+    }),
+    [t],
+  );
+  const [messages, setMessages] = useState<Message[]>(() => [welcome]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -82,15 +80,14 @@ export default function ChatView({
           }
         : {
             isUser: false,
-            message:
-              "I can't reach the kitchen server right now 😢 Please try again in a moment.",
+            message: t.chat.error,
             time: now(),
           },
     ]);
   };
 
   const handleChip = (label: string, verbatim?: boolean) => {
-    handleSend(verbatim ? label : `Tell me more about ${label}`);
+    handleSend(verbatim ? label : t.chat.tellMoreAbout(label));
   };
 
   useEffect(() => {
@@ -113,9 +110,9 @@ export default function ChatView({
           <span className="online" />
         </div>
         <div className="meta">
-          <h2 className="bot-name">Foodie AI</h2>
+          <h2 className="bot-name">{t.chat.botName}</h2>
           <span className="status">
-            <span className="status-dot" /> Online
+            <span className="status-dot" /> {t.chat.online}
           </span>
         </div>
       </header>
@@ -162,23 +159,23 @@ export default function ChatView({
 
       {/* Input */}
       <div className="composer glass">
-        <button className="attach" aria-label="Add attachment">
+        <button className="attach" aria-label={t.chat.attach}>
           <Plus size={20} />
         </button>
         <input
           type="text"
-          placeholder="Ask Foodie AI anything…"
+          placeholder={t.chat.placeholder}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           className="input"
-          aria-label="Message"
+          aria-label={t.chat.message}
         />
         <button
           onClick={() => handleSend()}
           className="send"
           disabled={!inputValue.trim() || isLoading}
-          aria-label="Send message"
+          aria-label={t.chat.send}
         >
           <Send size={17} />
         </button>

@@ -3,19 +3,23 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { Search, Heart, Star, Bell, Sparkles } from 'lucide-react';
-import { useFoods, CATEGORY_FILTERS } from '@/hooks/useFoods';
+import { useFoods, CATEGORY_FILTERS, type CategoryFilter, type Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
+import { useTranslation } from '@/i18n/LanguageContext';
 import ThemeToggle from './ThemeToggle';
+import DishDetailModal from './DishDetailModal';
 
 interface HomeViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
 }
 
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
+  const { t } = useTranslation();
   const { foods, loading } = useFoods();
   const { favorites, toggleFavorite } = useFavorites();
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedDish, setSelectedDish] = useState<Food | null>(null);
 
   const filteredFoods = foods.filter((item) => {
     const matchesCategory =
@@ -34,12 +38,12 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
       <header className="home-header">
         <div className="title-block">
           <span className="eyebrow">
-            <Sparkles size={13} /> What to eat today
+            <Sparkles size={13} /> {t.home.eyebrow}
           </span>
-          <h1 className="home-title">Homepage</h1>
+          <h1 className="home-title">{t.home.title}</h1>
         </div>
         <div className="header-actions">
-          <button className="icon-button" aria-label="Notifications">
+          <button className="icon-button" aria-label={t.home.notifications}>
             <Bell size={20} />
             <span className="notif-dot" />
           </button>
@@ -52,17 +56,17 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         <Search size={18} className="search-icon" />
         <input
           type="text"
-          placeholder="Search dishes, drinks, places…"
+          placeholder={t.home.searchPlaceholder}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="search-input"
-          aria-label="Search food"
+          aria-label={t.home.searchPlaceholder}
         />
         {searchQuery && (
           <button
             className="search-clear"
             onClick={() => setSearchQuery('')}
-            aria-label="Clear search"
+            aria-label={t.home.clearSearch}
           >
             ✕
           </button>
@@ -81,7 +85,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
               onClick={() => setSelectedCategory(category)}
               className={`chip ${isActive ? 'active' : ''}`}
             >
-              {category}
+              {t.home.categories[category]}
             </button>
           );
         })}
@@ -90,9 +94,9 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
       {/* Section label */}
       <div className="section-row">
         <h2 className="section-title">
-          {selectedCategory === 'All' ? 'Popular picks' : selectedCategory}
+          {selectedCategory === 'All' ? t.home.popularPicks : t.home.categories[selectedCategory]}
         </h2>
-        <span className="section-count">{filteredFoods.length} dishes</span>
+        <span className="section-count">{t.home.dishCount(filteredFoods.length)}</span>
       </div>
 
       {/* Grid */}
@@ -111,6 +115,15 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                 key={item.id}
                 className="card"
                 style={{ animationDelay: `${Math.min(i, 8) * 55}ms` }}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedDish(item)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedDish(item);
+                  }
+                }}
               >
                 <div className="card-media">
                   <Image
@@ -123,9 +136,12 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                   />
                   {item.tag && <span className="card-tag glass">{item.tag}</span>}
                   <button
-                    onClick={() => toggleFavorite(item.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(item.id);
+                    }}
                     className={`fav ${isFav ? 'is-fav' : ''}`}
-                    aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                    aria-label={isFav ? t.random.saved : t.random.favorite}
                     aria-pressed={isFav}
                   >
                     <Heart
@@ -144,14 +160,13 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                       {item.rating.toFixed(1)}
                     </span>
                     <button
-                      onClick={() =>
-                        onNavigateToChat(
-                          `Tell me about ${item.name} from ${item.restaurant} — is it a good pick today?`,
-                        )
-                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigateToChat(t.home.askAbout(item.name, item.restaurant));
+                      }}
                       className="ask-ai"
                     >
-                      <Sparkles size={11} /> Ask AI
+                      <Sparkles size={11} /> {t.home.askAi}
                     </button>
                   </div>
                 </div>
@@ -162,9 +177,17 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
       ) : (
         <div className="empty">
           <div className="empty-emoji">🍽️</div>
-          <p className="empty-title">No dishes found</p>
-          <span className="empty-sub">Try another category or search term.</span>
+          <p className="empty-title">{t.home.noResults}</p>
+          <span className="empty-sub">{t.home.noResultsSub}</span>
         </div>
+      )}
+
+      {selectedDish && (
+        <DishDetailModal
+          dish={selectedDish}
+          onClose={() => setSelectedDish(null)}
+          onNavigateToChat={onNavigateToChat}
+        />
       )}
 
       <style jsx>{`
@@ -379,7 +402,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           border-radius: var(--r-lg);
           overflow: hidden;
           box-shadow: var(--shadow-sm);
-          cursor: default;
+          cursor: pointer;
           animation: fadeInUp 0.5s var(--ease-out) both;
           transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
             border-color var(--dur) var(--ease);

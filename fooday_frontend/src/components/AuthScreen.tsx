@@ -3,10 +3,12 @@
 import React, { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Eye, EyeOff, Loader2, Sparkles, Mail, Lock, ArrowRight, User } from 'lucide-react';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 type AuthMode = 'signIn' | 'signUp' | 'forgotPassword';
 
 export default function AuthScreen() {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<AuthMode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,11 +28,11 @@ export default function AuthScreen() {
     setSuccess(null);
 
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      setError('Please enter a valid email address.');
+      setError(t.auth.invalidEmail);
       return false;
     }
     if (mode !== 'forgotPassword' && password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+      setError(t.auth.passwordLength);
       return false;
     }
     return true;
@@ -47,18 +49,18 @@ export default function AuthScreen() {
       if (mode === 'signUp') {
         const { error: err } = await supabase.auth.signUp({ email, password });
         if (err) throw err;
-        setSuccess('Check your email to confirm your account!');
+        setSuccess(t.auth.confirmEmail);
       } else if (mode === 'signIn') {
         const { error: err } = await supabase.auth.signInWithPassword({ email, password });
         if (err) throw err;
       } else if (mode === 'forgotPassword') {
         const { error: err } = await supabase.auth.resetPasswordForEmail(email);
         if (err) throw err;
-        setSuccess('Password reset instructions sent to your email.');
+        setSuccess(t.auth.resetSent);
       }
     } catch (err: unknown) {
       failed = true;
-      setError((err as Error).message || 'Authentication failed. Please try again.');
+      setError((err as Error).message || t.auth.authFailed);
     } finally {
       // On a successful sign-in the auth state change unmounts this screen, so
       // we leave loading on. Every other outcome returns control to the form.
@@ -73,7 +75,7 @@ export default function AuthScreen() {
       const { error: err } = await supabase.auth.signInAnonymously();
       if (err) throw err;
     } catch (err: unknown) {
-      setError((err as Error).message || 'Failed to sign in as guest.');
+      setError((err as Error).message || t.auth.guestFailed);
       setLoading(false);
     }
   };
@@ -88,14 +90,14 @@ export default function AuthScreen() {
             <Sparkles size={24} color="var(--primary-contrast)" />
           </div>
           <h1 className="logo-text">Fooday</h1>
-          <p className="tagline">What to eat today</p>
+          <p className="tagline">{t.auth.tagline}</p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleAuth} className="auth-form" style={{ animationDelay: '50ms' }}>
           
           <div className="input-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">{t.auth.emailLabel}</label>
             <div className="input-wrapper">
               <span className="input-icon">
                 <Mail size={18} />
@@ -113,7 +115,7 @@ export default function AuthScreen() {
 
           {mode !== 'forgotPassword' && (
             <div className="input-group">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="password">{t.auth.passwordLabel}</label>
               <div className="input-wrapper">
                 <span className="input-icon">
                   <Lock size={18} />
@@ -143,7 +145,7 @@ export default function AuthScreen() {
                   onClick={() => handleModeChange('forgotPassword')}
                   disabled={loading}
                 >
-                  Forgot password?
+                  {t.auth.forgotPassword}
                 </button>
               )}
             </div>
@@ -156,18 +158,18 @@ export default function AuthScreen() {
             {loading ? (
               <Loader2 className="spinner" size={20} />
             ) : mode === 'signIn' ? (
-              'Sign In'
+              t.auth.signIn
             ) : mode === 'signUp' ? (
-              'Create Account'
+              t.auth.createAccount
             ) : (
-              'Send Reset Link'
+              t.auth.sendResetLink
             )}
           </button>
         </form>
 
         {/* Separator */}
         <div className="separator" style={{ animationDelay: '100ms' }}>
-          <span>or</span>
+          <span>{t.auth.or}</span>
         </div>
 
         {/* Guest Button */}
@@ -178,7 +180,7 @@ export default function AuthScreen() {
           style={{ animationDelay: '150ms' }}
         >
           <User size={18} />
-          Continue as guest
+          {t.auth.continueAsGuest}
           <ArrowRight size={18} />
         </button>
 
@@ -186,13 +188,17 @@ export default function AuthScreen() {
         <div className="toggle-mode" style={{ animationDelay: '200ms' }}>
           {mode === 'signIn' ? (
             <p>
-              Don&apos;t have an account?{' '}
-              <button onClick={() => handleModeChange('signUp')} disabled={loading}>Sign Up</button>
+              {t.auth.noAccount}{' '}
+              <button onClick={() => handleModeChange('signUp')} disabled={loading}>
+                {t.auth.signUp}
+              </button>
             </p>
           ) : (
             <p>
-              Already have an account?{' '}
-              <button onClick={() => handleModeChange('signIn')} disabled={loading}>Sign In</button>
+              {t.auth.haveAccount}{' '}
+              <button onClick={() => handleModeChange('signIn')} disabled={loading}>
+                {t.auth.signIn}
+              </button>
             </p>
           )}
         </div>

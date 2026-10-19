@@ -2,11 +2,24 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { Mail, CalendarDays, Star, ChevronRight, Heart, Clock, LogOut } from 'lucide-react';
-import { useFoods } from '@/hooks/useFoods';
+import {
+  Mail,
+  CalendarDays,
+  Star,
+  ChevronRight,
+  Heart,
+  Clock,
+  LogOut,
+  Globe,
+  Settings,
+} from 'lucide-react';
+import { useFoods, type Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
+import { useTranslation } from '@/i18n/LanguageContext';
+import { LANGUAGES } from '@/i18n/translations';
+import DishDetailModal from './DishDetailModal';
 
 interface ProfileViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
@@ -16,14 +29,16 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const { foods, byId } = useFoods();
   const { favorites } = useFavorites();
   const { user, signOut } = useAuth();
+  const { t, lang, setLang } = useTranslation();
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
+  const [selectedDish, setSelectedDish] = useState<Food | null>(null);
 
   const favoriteItems = [...favorites]
     .map((id) => byId[id])
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   const isGuest = user?.is_anonymous || !user?.email;
-  const displayName = isGuest ? 'Guest' : user?.email?.split('@')[0] || 'User';
+  const displayName = isGuest ? t.profile.guest : user?.email?.split('@')[0] || t.profile.guest;
   const initial = displayName.charAt(0).toUpperCase();
   const dishesAdded = user?.id ? foods.filter((f) => f.created_by === user.id).length : 0;
   const points = favoriteItems.length * 5 + dishesAdded * 25;
@@ -42,7 +57,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
       {/* Banner */}
       <div className="banner">
         <div className="banner-top">
-          <button className="banner-btn" aria-label="Sign Out" onClick={signOut}>
+          <button className="banner-btn" aria-label={t.profile.signOut} onClick={signOut}>
             <LogOut size={19} />
           </button>
           <ThemeToggle variant="onPrimary" />
@@ -53,18 +68,18 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
             <div className="avatar-placeholder">{initial}</div>
           </div>
           <div className="id-text">
-            <h2 className="name">{isGuest ? 'Guest User' : displayName}</h2>
+            <h2 className="name">{isGuest ? t.profile.guestUser : displayName}</h2>
             <span className="detail">
-              <Mail size={13} /> {isGuest ? 'Not signed in' : user?.email}
+              <Mail size={13} /> {isGuest ? t.profile.notSignedIn : user?.email}
             </span>
             {isGuest ? (
               <button className="upgrade-btn" onClick={handleUpgrade}>
-                Upgrade account
+                {t.profile.upgrade}
               </button>
             ) : (
               <span className="detail">
                 <CalendarDays size={13} />{' '}
-                {memberSince ? `Member since ${memberSince}` : 'Fooday Member'}
+                {memberSince ? t.profile.memberSince(memberSince) : t.profile.foodayMember}
               </span>
             )}
           </div>
@@ -75,17 +90,17 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
       <div className="stats">
         <div className="stat">
           <span className="stat-num">{favoriteItems.length}</span>
-          <span className="stat-label">Favorites</span>
+          <span className="stat-label">{t.profile.statFavorites}</span>
         </div>
         <span className="stat-divider" />
         <div className="stat">
           <span className="stat-num">{dishesAdded}</span>
-          <span className="stat-label">Dishes</span>
+          <span className="stat-label">{t.profile.statDishes}</span>
         </div>
         <span className="stat-divider" />
         <div className="stat">
           <span className="stat-num">{points}</span>
-          <span className="stat-label">Points</span>
+          <span className="stat-label">{t.profile.statPoints}</span>
         </div>
       </div>
 
@@ -103,13 +118,13 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
             className={`segment-btn ${tab === 'favorites' ? 'active' : ''}`}
             onClick={() => setTab('favorites')}
           >
-            <Heart size={15} /> Favorites
+            <Heart size={15} /> {t.profile.tabFavorites}
           </button>
           <button
             className={`segment-btn ${tab === 'history' ? 'active' : ''}`}
             onClick={() => setTab('history')}
           >
-            <Clock size={15} /> History
+            <Clock size={15} /> {t.profile.tabHistory}
           </button>
         </div>
       </div>
@@ -124,11 +139,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                   key={item.id}
                   className="fav-item"
                   style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}
-                  onClick={() =>
-                    onNavigateToChat(
-                      `Suggest dishes similar to ${item.name} from ${item.restaurant}.`,
-                    )
-                  }
+                  onClick={() => setSelectedDish(item)}
                 >
                   <Image
                     src={item.image_url}
@@ -155,10 +166,8 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
               <div className="ph-icon">
                 <Heart size={26} />
               </div>
-              <p className="ph-title">No favorites yet</p>
-              <span className="ph-sub">
-                Tap the heart on any dish to save it here.
-              </span>
+              <p className="ph-title">{t.profile.noFavorites}</p>
+              <span className="ph-sub">{t.profile.noFavoritesSub}</span>
             </div>
           )
         ) : (
@@ -166,14 +175,54 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
             <div className="ph-icon">
               <Clock size={26} />
             </div>
-            <p className="ph-title">No history yet</p>
-            <span className="ph-sub">
-              Dishes you view and order will appear here.
-            </span>
+            <p className="ph-title">{t.profile.noHistory}</p>
+            <span className="ph-sub">{t.profile.noHistorySub}</span>
           </div>
         )}
       </div>
+
+      {/* Settings & preferences */}
+      <div className="settings-card">
+        <div className="settings-head">
+          <Settings size={16} /> {t.profile.settingsTitle}
+        </div>
+        <div className="setting-row">
+          <span className="setting-label">
+            <Globe size={15} /> {t.profile.languageLabel}
+          </span>
+          <div className="lang-switch" role="group" aria-label={t.profile.languageLabel}>
+            {LANGUAGES.map(({ code, label, flag }) => (
+              <button
+                key={code}
+                type="button"
+                className={`lang-btn ${lang === code ? 'active' : ''}`}
+                aria-pressed={lang === code}
+                onClick={() => setLang(code)}
+              >
+                <span className="lang-flag" aria-hidden="true">
+                  {flag}
+                </span>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="setting-row">
+          <span className="setting-label">
+            <Settings size={15} /> {t.profile.appearanceLabel}
+          </span>
+          <ThemeToggle />
+        </div>
       </div>
+      </div>
+
+      {selectedDish && (
+        <DishDetailModal
+          dish={selectedDish}
+          onClose={() => setSelectedDish(null)}
+          onNavigateToChat={onNavigateToChat}
+        />
+      )}
 
       <style jsx>{`
         .profile {
@@ -496,6 +545,77 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           line-height: 1.45;
         }
 
+        /* Settings & preferences */
+        .settings-card {
+          margin: 16px clamp(16px, 5vw, 20px) 0;
+          padding: 16px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-lg);
+          box-shadow: var(--shadow-sm);
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .settings-head {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.9375rem;
+          font-weight: 700;
+          color: var(--text);
+        }
+        .setting-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .setting-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: var(--text-soft);
+        }
+        .lang-switch {
+          display: inline-flex;
+          padding: 4px;
+          gap: 4px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: var(--r-full);
+        }
+        .lang-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 36px;
+          padding: 0 14px;
+          border: none;
+          border-radius: var(--r-full);
+          background: none;
+          color: var(--text-soft);
+          font-size: 0.8125rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+        }
+        .lang-btn:hover:not(.active) {
+          color: var(--primary-strong);
+        }
+        .lang-btn.active {
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          box-shadow: var(--shadow-primary);
+        }
+        .lang-flag {
+          font-size: 0.9375rem;
+          line-height: 1;
+        }
+
         /* Desktop: two-column dashboard that fills the content area */
         @media (min-width: 1024px) {
           div.profile {
@@ -537,6 +657,9 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           .panel {
             padding: 0;
             min-height: 360px;
+          }
+          .settings-card {
+            margin: 0;
           }
           .fav-list {
             display: grid;
