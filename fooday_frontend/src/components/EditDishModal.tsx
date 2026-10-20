@@ -27,6 +27,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   const [tag, setTag] = useState(dish.tag ?? '');
   const [reviewNote, setReviewNote] = useState(dish.review_note ?? '');
   const [urlInput, setUrlInput] = useState(dish.image_url ?? '');
+  const [showUrlInput, setShowUrlInput] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState('');
   const [unsplashUrl, setUnsplashUrl] = useState('');
   const [candidates, setCandidates] = useState<DishImage[]>([]);
@@ -183,16 +184,6 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
               )}
             </div>
 
-            <label className="field">
-              <span className="label">{t.editDish.imageUrl}</span>
-              <input
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder={t.addDish.imageUrlPlaceholder}
-                inputMode="url"
-              />
-            </label>
-
             <div className="upload-row">
               <button
                 type="button"
@@ -236,6 +227,26 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
                   </button>
                 ))}
               </div>
+            )}
+
+            <button
+              type="button"
+              className="toggle-url-btn"
+              onClick={() => setShowUrlInput((v) => !v)}
+            >
+              {showUrlInput ? t.addDish.hidePasteUrl : t.addDish.orPasteUrl}
+            </button>
+
+            {showUrlInput && (
+              <label className="field url-field">
+                <span className="label">{t.editDish.imageUrl}</span>
+                <input
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder={t.addDish.imageUrlPlaceholder}
+                  inputMode="url"
+                />
+              </label>
             )}
           </div>
 
@@ -495,6 +506,20 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         }
         .link-btn:hover {
           color: var(--heart);
+        }
+        .toggle-url-btn {
+          align-self: flex-start;
+          padding: 0;
+          border: none;
+          background: transparent;
+          color: var(--text-faint);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: color var(--dur-fast) var(--ease);
+        }
+        .toggle-url-btn:hover {
+          text-decoration: underline;
         }
         .src-badge {
           position: absolute;

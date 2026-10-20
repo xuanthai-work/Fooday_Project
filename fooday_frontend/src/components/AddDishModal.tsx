@@ -29,6 +29,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [rating, setRating] = useState(5);
   const [tag, setTag] = useState('');
   const [urlInput, setUrlInput] = useState('');
+  const [showUrlInput, setShowUrlInput] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState('');
   const [unsplashUrl, setUnsplashUrl] = useState('');
   const [candidates, setCandidates] = useState<DishImage[]>([]);
@@ -160,17 +161,6 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
               )}
             </div>
 
-            {/* 1 · paste a URL (highest priority) */}
-            <label className="field">
-              <span className="label">{t.addDish.imageUrlLabel}</span>
-              <input
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder={t.addDish.imageUrlPlaceholder}
-                inputMode="url"
-              />
-            </label>
-
             {/* 2 · upload */}
             <div className="upload-row">
               <button
@@ -209,6 +199,27 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                   </button>
                 ))}
               </div>
+            )}
+
+            {/* 4 · paste a URL (highest priority) — hidden behind a toggle */}
+            <button
+              type="button"
+              className="toggle-url-btn"
+              onClick={() => setShowUrlInput((v) => !v)}
+            >
+              {showUrlInput ? t.addDish.hidePasteUrl : t.addDish.orPasteUrl}
+            </button>
+
+            {showUrlInput && (
+              <label className="field url-field">
+                <span className="label">{t.addDish.imageUrlLabel}</span>
+                <input
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder={t.addDish.imageUrlPlaceholder}
+                  inputMode="url"
+                />
+              </label>
             )}
           </div>
 
@@ -427,6 +438,18 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           text-decoration: underline;
         }
         .link-btn:hover { color: var(--heart); }
+        .toggle-url-btn {
+          align-self: flex-start;
+          padding: 0;
+          border: none;
+          background: transparent;
+          color: var(--text-faint);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: color var(--dur-fast) var(--ease);
+        }
+        .toggle-url-btn:hover { text-decoration: underline; }
         .src-badge {
           position: absolute;
           bottom: 8px;
