@@ -26,8 +26,6 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   const [openingTime, setOpeningTime] = useState(dish.opening_time ?? '');
   const [tag, setTag] = useState(dish.tag ?? '');
   const [reviewNote, setReviewNote] = useState(dish.review_note ?? '');
-  const [urlInput, setUrlInput] = useState(dish.image_url ?? '');
-  const [showUrlInput, setShowUrlInput] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState('');
   const [unsplashUrl, setUnsplashUrl] = useState('');
   const [candidates, setCandidates] = useState<DishImage[]>([]);
@@ -45,11 +43,10 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Unsplash suggestions: only while the user hasn't pasted a URL or uploaded a photo.
+  // Unsplash suggestions: only while the user hasn't uploaded a photo.
   useEffect(() => {
     const q = name.trim();
-    const hasUrl = /^https:\/\/\S+/i.test(urlInput.trim());
-    if (!q || hasUrl || uploadedUrl) return;
+    if (!q || uploadedUrl) return;
     let active = true;
     const timer = setTimeout(async () => {
       const imgs = await dishImageService.search(q);
@@ -61,7 +58,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
       active = false;
       clearTimeout(timer);
     };
-  }, [name, urlInput, uploadedUrl]);
+  }, [name, uploadedUrl]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -84,19 +81,15 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
 
   const pickCandidate = (url: string) => setUnsplashUrl(url);
 
-  // Image priority: pasted URL → uploaded photo → Unsplash → existing image.
-  const urlValid = /^https:\/\/\S+/i.test(urlInput.trim());
-  const resolvedImage =
-    (urlValid ? urlInput.trim() : '') || uploadedUrl || unsplashUrl || dish.image_url || '';
-  const imageSource: 'url' | 'upload' | 'unsplash' | 'existing' | 'none' = urlValid
-    ? 'url'
-    : uploadedUrl
-      ? 'upload'
-      : unsplashUrl
-        ? 'unsplash'
-        : dish.image_url
-          ? 'existing'
-          : 'none';
+  // Image priority: uploaded photo → Unsplash → existing image.
+  const resolvedImage = uploadedUrl || unsplashUrl || dish.image_url || '';
+  const imageSource: 'upload' | 'unsplash' | 'existing' | 'none' = uploadedUrl
+    ? 'upload'
+    : unsplashUrl
+      ? 'unsplash'
+      : dish.image_url
+        ? 'existing'
+        : 'none';
   const canSubmit = Boolean(name.trim() && restaurant.trim()) && !busy;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -155,7 +148,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         </header>
 
         <form className="form" onSubmit={handleSubmit}>
-          {/* Image — paste URL → upload → Unsplash suggestions → existing image */}
+          {/* Image — upload → Unsplash suggestions → existing image */}
           <div className="image-block">
             <div className="preview">
               {resolvedImage ? (
@@ -175,11 +168,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
               )}
               {resolvedImage && imageSource !== 'existing' && (
                 <span className="src-badge">
-                  {imageSource === 'url'
-                    ? t.addDish.fromUrl
-                    : imageSource === 'upload'
-                      ? t.addDish.uploaded
-                      : t.addDish.auto}
+                  {imageSource === 'upload' ? t.addDish.uploaded : t.addDish.auto}
                 </span>
               )}
             </div>
@@ -206,7 +195,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
               <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleUpload} />
             </div>
 
-            {!urlValid && !uploadedUrl && candidates.length > 0 && (
+            {!uploadedUrl && candidates.length > 0 && (
               <div className="thumbs">
                 {candidates.map((c) => (
                   <button
@@ -227,26 +216,6 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
                   </button>
                 ))}
               </div>
-            )}
-
-            <button
-              type="button"
-              className="toggle-url-btn"
-              onClick={() => setShowUrlInput((v) => !v)}
-            >
-              {showUrlInput ? t.addDish.hidePasteUrl : t.addDish.orPasteUrl}
-            </button>
-
-            {showUrlInput && (
-              <label className="field url-field">
-                <span className="label">{t.editDish.imageUrl}</span>
-                <input
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder={t.addDish.imageUrlPlaceholder}
-                  inputMode="url"
-                />
-              </label>
             )}
           </div>
 
@@ -506,20 +475,6 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         }
         .link-btn:hover {
           color: var(--heart);
-        }
-        .toggle-url-btn {
-          align-self: flex-start;
-          padding: 0;
-          border: none;
-          background: transparent;
-          color: var(--text-faint);
-          font-size: 12.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: color var(--dur-fast) var(--ease);
-        }
-        .toggle-url-btn:hover {
-          text-decoration: underline;
         }
         .src-badge {
           position: absolute;
