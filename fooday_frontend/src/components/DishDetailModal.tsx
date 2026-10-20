@@ -37,8 +37,10 @@ export default function DishDetailModal({
   const [draftRating, setDraftRating] = useState(5);
   const [comment, setComment] = useState('');
   const [posting, setPosting] = useState(false);
+  const [activeImgIndex, setActiveImgIndex] = useState(0);
   const closingRef = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   // Only render the portal once mounted on the client (SSR-safe).
   const [mounted, setMounted] = useState(false);
@@ -51,7 +53,15 @@ export default function DishDetailModal({
 
   const isFav = favorites.has(currentDish.id);
   const rating = Number(currentDish.rating ?? 0);
-  const imageUrl = currentDish.image_url?.trim() || '';
+  const images: string[] =
+    currentDish.images && currentDish.images.length > 0
+      ? currentDish.images
+      : currentDish.image_url
+        ? [currentDish.image_url]
+        : [];
+  const safeImgIndex = images.length
+    ? Math.min(activeImgIndex, images.length - 1)
+    : 0;
   const isGuest = !user || Boolean(user.is_anonymous);
   // Prefer the explicit address; fall back to the restaurant name for the query.
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -134,6 +144,14 @@ export default function DishDetailModal({
     setExpanded(el.scrollTop > 24);
   };
 
+  // Keep the photo counter in sync with the horizontal swipe position.
+  const handleCarouselScroll = () => {
+    const el = carouselRef.current;
+    if (!el || images.length === 0) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setActiveImgIndex(Math.max(0, Math.min(idx, images.length - 1)));
+  };
+
   // Inlined (not a child component) so styled-jsx scoping still applies.
   const stars = (value: number, size = 14) => (
     <span className="stars-row">
@@ -197,17 +215,30 @@ export default function DishDetailModal({
           </div>
         </div>
 
-        {/* Hero */}
+        {/* Hero — Google Maps style swipeable photo carousel */}
         <div className="hero">
-          {imageUrl ? (
-            <Image
-              src={imageUrl}
-              alt={currentDish.name}
-              fill
-              sizes="(max-width: 640px) 100vw, 560px"
-              className="hero-img"
-              style={{ objectFit: 'cover' }}
-            />
+          {images.length > 0 ? (
+            <>
+              <div className="carousel-track" ref={carouselRef} onScroll={handleCarouselScroll}>
+                {images.map((src, i) => (
+                  <div key={`${src}-${i}`} className="carousel-slide">
+                    <Image
+                      src={src}
+                      alt={`${currentDish.name} ${i + 1}`}
+                      fill
+                      sizes="(max-width: 640px) 100vw, 560px"
+                      style={{ objectFit: 'cover' }}
+                      priority={i === 0}
+                    />
+                  </div>
+                ))}
+              </div>
+              {images.length > 1 && (
+                <span className="carousel-badge">
+                  {safeImgIndex + 1} / {images.length}
+                </span>
+              )}
+            </>
           ) : (
             <div className="hero-fallback" aria-hidden="true">
               <Sparkles size={40} />
@@ -418,7 +449,11 @@ export default function DishDetailModal({
         <EditDishModal
           dish={currentDish}
           onClose={() => setIsEditing(false)}
-          onUpdated={(updated) => setCurrentDish(updated)}
+          onUpdated={(updated) => {
+            setCurrentDish(updated);
+            setActiveImgIndex(0);
+            carouselRef.current?.scrollTo({ left: 0 });
+          }}
         />
       )}
 
@@ -541,8 +576,42 @@ export default function DishDetailModal({
           background: var(--surface-2);
           overflow: hidden;
         }
-        .hero-img {
-          object-fit: cover;
+        .carousel-track {
+          display: flex;
+          overflow-x: auto;
+          overflow-y: hidden;
+          scroll-snap-type: x mandatory;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          width: 100%;
+          height: 100%;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior-x: contain;
+        }
+        .carousel-track::-webkit-scrollbar {
+          display: none;
+        }
+        .carousel-slide {
+          flex: 0 0 100%;
+          min-width: 100%;
+          height: 100%;
+          scroll-snap-align: start;
+          position: relative;
+        }
+        .carousel-badge {
+          position: absolute;
+          bottom: 12px;
+          right: 14px;
+          background: rgba(0, 0, 0, 0.65);
+          color: #fff;
+          padding: 4px 10px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 700;
+          z-index: 2;
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          pointer-events: none;
         }
         .hero-fallback {
           position: absolute;

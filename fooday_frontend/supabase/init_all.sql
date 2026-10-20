@@ -13,6 +13,7 @@ create table if not exists public.foods (
   restaurant   text not null,
   rating       numeric(2,1) not null default 4.5,
   image_url    text not null,
+  images       text[] default '{}',
   tag          text,
   address      text,
   opening_time text,
@@ -23,6 +24,7 @@ create table if not exists public.foods (
 
 -- Bảo đảm các cột mở rộng luôn tồn tại ngay cả khi bảng đã được tạo trước đó
 alter table public.foods
+  add column if not exists images       text[] default '{}',
   add column if not exists address      text,
   add column if not exists opening_time text,
   add column if not exists review_note  text,

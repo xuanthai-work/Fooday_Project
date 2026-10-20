@@ -26,8 +26,13 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   const [openingTime, setOpeningTime] = useState(dish.opening_time ?? '');
   const [tag, setTag] = useState(dish.tag ?? '');
   const [reviewNote, setReviewNote] = useState(dish.review_note ?? '');
-  const [uploadedUrl, setUploadedUrl] = useState('');
-  const [unsplashUrl, setUnsplashUrl] = useState('');
+  const [imageList, setImageList] = useState<string[]>(
+    dish.images && dish.images.length > 0
+      ? dish.images
+      : dish.image_url
+        ? [dish.image_url]
+        : [],
+  );
   const [candidates, setCandidates] = useState<DishImage[]>([]);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,35 +48,39 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Unsplash suggestions: only while the user hasn't uploaded a photo.
+  // Unsplash suggestions based on the dish name.
   useEffect(() => {
     const q = name.trim();
-    if (!q || uploadedUrl) return;
+    if (!q) return;
     let active = true;
     const timer = setTimeout(async () => {
       const imgs = await dishImageService.search(q);
       if (!active) return;
       setCandidates(imgs);
-      setUnsplashUrl(imgs[0]?.url ?? '');
     }, 600);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [name, uploadedUrl]);
+  }, [name]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length === 0 || !user) return;
     setUploading(true);
     setError(null);
     try {
-      const safe = file.name.replace(/[^a-zA-Z0-9.]+/g, '-');
-      const path = `${user.id}/${Date.now()}-${safe}`;
-      const { error: upErr } = await supabase.storage.from('dish-images').upload(path, file);
-      if (upErr) throw upErr;
-      const { data } = supabase.storage.from('dish-images').getPublicUrl(path);
-      setUploadedUrl(data.publicUrl);
+      const urls: string[] = [];
+      for (const [i, file] of files.entries()) {
+        const safe = file.name.replace(/[^a-zA-Z0-9.]+/g, '-');
+        const path = `${user.id}/${Date.now()}-${i}-${safe}`;
+        const { error: upErr } = await supabase.storage.from('dish-images').upload(path, file);
+        if (upErr) throw upErr;
+        const { data } = supabase.storage.from('dish-images').getPublicUrl(path);
+        urls.push(data.publicUrl);
+      }
+      setImageList((prev) => [...prev, ...urls]);
     } catch (err) {
       setError(err instanceof Error ? err.message : t.addDish.uploadFailed);
     } finally {
@@ -79,18 +88,20 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
     }
   };
 
-  const pickCandidate = (url: string) => setUnsplashUrl(url);
+  const addPhoto = (url: string) => {
+    setImageList((prev) => (prev.includes(url) ? prev : [...prev, url]));
+  };
 
-  // Image priority: uploaded photo → Unsplash → existing image.
-  const resolvedImage = uploadedUrl || unsplashUrl || dish.image_url || '';
-  const imageSource: 'upload' | 'unsplash' | 'existing' | 'none' = uploadedUrl
-    ? 'upload'
-    : unsplashUrl
-      ? 'unsplash'
-      : dish.image_url
-        ? 'existing'
-        : 'none';
-  const canSubmit = Boolean(name.trim() && restaurant.trim()) && !busy;
+  const removeImage = (index: number) => {
+    if (imageList.length <= 1) {
+      setError(t.addDish.minOnePhoto);
+      return;
+    }
+    setError(null);
+    setImageList((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const canSubmit = Boolean(name.trim() && restaurant.trim() && imageList.length > 0) && !busy;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +119,8 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         opening_time: openingTime.trim() || null,
         tag: tag.trim() || null,
         review_note: reviewNote.trim() || null,
-        image_url: resolvedImage,
+        image_url: imageList[0] || dish.image_url || '',
+        images: imageList,
       })
       .eq('id', dish.id)
       .select()
@@ -148,61 +160,66 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         </header>
 
         <form className="form" onSubmit={handleSubmit}>
-          {/* Image — upload → Unsplash suggestions → existing image */}
+          {/* Photos — existing gallery + multi upload + Unsplash suggestions */}
           <div className="image-block">
-            <div className="preview">
-              {resolvedImage ? (
-                <Image
-                  src={resolvedImage}
-                  alt={name || 'Dish'}
-                  fill
-                  sizes="320px"
-                  className="preview-img"
-                  style={{ objectFit: 'cover' }}
-                />
-              ) : (
-                <div className="preview-empty">
-                  <Sparkles size={20} />
-                  <span>{t.addDish.pasteHint}</span>
-                </div>
-              )}
-              {resolvedImage && imageSource !== 'existing' && (
-                <span className="src-badge">
-                  {imageSource === 'upload' ? t.addDish.uploaded : t.addDish.auto}
-                </span>
-              )}
-            </div>
-
-            <div className="upload-row">
-              <button
-                type="button"
-                className="upload-btn"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-              >
-                {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-                {uploading
-                  ? t.addDish.uploading
-                  : uploadedUrl
-                    ? t.addDish.replacePhoto
-                    : t.addDish.uploadPhoto}
-              </button>
-              {uploadedUrl && (
-                <button type="button" className="link-btn" onClick={() => setUploadedUrl('')}>
-                  {t.addDish.removeUpload}
+            {imageList.length > 0 ? (
+              <div className="photo-grid">
+                {imageList.map((src, i) => (
+                  <div className="photo-card" key={`${src}-${i}`}>
+                    <Image
+                      src={src}
+                      alt={`${name || 'Dish'} ${i + 1}`}
+                      fill
+                      sizes="140px"
+                      className="photo-img"
+                      style={{ objectFit: 'cover' }}
+                    />
+                    {i === 0 && <span className="cover-badge">{t.addDish.coverBadge}</span>}
+                    <button
+                      type="button"
+                      className="photo-del"
+                      onClick={() => removeImage(i)}
+                      aria-label={t.addDish.deletePhoto}
+                      title={t.addDish.deletePhoto}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="photo-add"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
+                  <span>{uploading ? t.addDish.uploading : t.addDish.addMorePhotos}</span>
                 </button>
-              )}
-              <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleUpload} />
-            </div>
+              </div>
+            ) : (
+              <div className="preview-empty">
+                <Sparkles size={20} />
+                <span>{t.addDish.pasteHint}</span>
+              </div>
+            )}
 
-            {!uploadedUrl && candidates.length > 0 && (
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={handleUpload}
+            />
+
+            {candidates.length > 0 && (
               <div className="thumbs">
                 {candidates.map((c) => (
                   <button
                     type="button"
                     key={c.url}
-                    className={`thumb ${unsplashUrl === c.url ? 'active' : ''}`}
-                    onClick={() => pickCandidate(c.url)}
+                    className={`thumb ${imageList.includes(c.url) ? 'active' : ''}`}
+                    onClick={() => addPhoto(c.url)}
                     aria-label={t.addDish.useThisPhoto}
                   >
                     <Image
@@ -394,28 +411,98 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           flex-direction: column;
           gap: 10px;
         }
-        .preview {
+        .photo-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .photo-card {
           position: relative;
-          width: 100%;
-          aspect-ratio: 16 / 10;
-          border-radius: var(--r-lg);
+          width: 92px;
+          height: 92px;
+          border-radius: var(--r-md);
           overflow: hidden;
           background: var(--surface-2);
           border: 1px solid var(--border);
         }
-        .preview-empty {
+        .photo-img {
+          object-fit: cover;
+        }
+        .cover-badge {
           position: absolute;
-          inset: 0;
+          left: 6px;
+          bottom: 6px;
+          padding: 2px 7px;
+          border-radius: var(--r-full);
+          background: rgba(0, 0, 0, 0.65);
+          color: #fff;
+          font-size: 10px;
+          font-weight: 700;
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          pointer-events: none;
+        }
+        .photo-del {
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          display: grid;
+          place-items: center;
+          width: 22px;
+          height: 22px;
+          border: none;
+          border-radius: var(--r-full);
+          background: var(--heart);
+          color: #fff;
+          cursor: pointer;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+          transition: transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+        }
+        .photo-del:hover {
+          transform: scale(1.08);
+        }
+        .photo-add {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          width: 92px;
+          height: 92px;
+          padding: 0 6px;
+          border-radius: var(--r-md);
+          border: 1.5px dashed var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text-soft);
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.2;
+          text-align: center;
+          cursor: pointer;
+          transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+        }
+        .photo-add:hover:not(:disabled) {
+          border-color: var(--primary);
+          color: var(--primary-strong);
+        }
+        .photo-add:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .preview-empty {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           gap: 8px;
+          min-height: 92px;
+          padding: 12px;
+          border-radius: var(--r-md);
+          border: 1.5px dashed var(--border-strong);
+          background: var(--surface-2);
           color: var(--text-faint);
           font-size: 13px;
-        }
-        .preview-img {
-          object-fit: cover;
+          text-align: center;
         }
         .thumb-img {
           object-fit: cover;
@@ -437,62 +524,6 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         }
         .thumb.active {
           border-color: var(--primary);
-        }
-        .upload-btn {
-          align-self: flex-start;
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          padding: 8px 14px;
-          border-radius: var(--r-full);
-          border: 1px solid var(--border-strong);
-          background: var(--surface-2);
-          color: var(--text-soft);
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-        }
-        .upload-btn:hover:not(:disabled) {
-          border-color: var(--primary);
-          color: var(--primary-strong);
-        }
-        .upload-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-        .link-btn {
-          background: none;
-          border: none;
-          padding: 0;
-          color: var(--text-faint);
-          font-size: 12.5px;
-          font-weight: 600;
-          cursor: pointer;
-          text-decoration: underline;
-        }
-        .link-btn:hover {
-          color: var(--heart);
-        }
-        .src-badge {
-          position: absolute;
-          bottom: 8px;
-          left: 8px;
-          max-width: calc(100% - 16px);
-          padding: 4px 9px;
-          border-radius: var(--r-full);
-          background: var(--glass-strong);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          color: var(--text);
-          font-size: 11px;
-          font-weight: 700;
-          border: 1px solid var(--border);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
         }
         .field {
           display: flex;
