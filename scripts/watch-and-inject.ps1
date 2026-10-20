@@ -64,23 +64,25 @@ while ($true) {
                 $finalContent = [System.IO.File]::ReadAllText($taskFile)
                 $finalStatus = if ($exitCode -eq 0) { "DONE" } else { "FAILED" }
 
-                $summaryReport = @"
-
----
-## Dev Execution Telemetry
-- **Timestamp**: $((Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
-- **Exit Code**: $exitCode ($finalStatus)
-- **Session Mode**: $(if ($isContinue) { "continue" } else { "fresh" })
-- **Changed Files**:
-```text
-$gitChangedFiles
-```
-- **Git Diff Summary**:
-```text
-$gitDiffSummary
-```
-> Full log terminal: `docs/logs/last_opencode_run.log`
-"@
+                $nowStr = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                $sessionModeStr = if ($isContinue) { "continue" } else { "fresh" }
+                $summaryReport = @(
+                    "",
+                    "---",
+                    "## Dev Execution Telemetry",
+                    "- **Timestamp**: $nowStr",
+                    "- **Exit Code**: $exitCode ($finalStatus)",
+                    "- **Session Mode**: $sessionModeStr",
+                    "- **Changed Files**:",
+                    '```text',
+                    $gitChangedFiles.TrimEnd(),
+                    '```',
+                    "- **Git Diff Summary**:",
+                    '```text',
+                    $gitDiffSummary.TrimEnd(),
+                    '```',
+                    '> Full log terminal: `docs/logs/last_opencode_run.log`'
+                ) -join "`n"
 
                 $finalContent = $finalContent -replace "status:\s*IN_PROGRESS", "status: $finalStatus"
                 $finalContent = $finalContent + "`n" + $summaryReport
