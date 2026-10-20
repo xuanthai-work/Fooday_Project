@@ -3,12 +3,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink } from 'lucide-react';
+import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, Pencil } from 'lucide-react';
 import type { Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useAuth } from '@/hooks/useAuth';
 import { useReviews } from '@/hooks/useReviews';
 import { useTranslation } from '@/i18n/LanguageContext';
+import EditDishModal from './EditDishModal';
 
 interface DishDetailModalProps {
   dish: Food;
@@ -24,12 +25,15 @@ export default function DishDetailModal({
   const { t } = useTranslation();
   const { user } = useAuth();
   const { favorites, toggleFavorite } = useFavorites();
+  const [currentDish, setCurrentDish] = useState<Food>(dish);
   const { reviews, loading: reviewsLoading, addReview, deleteReview, totalCount, averageRating } =
-    useReviews(dish.id);
+    useReviews(currentDish.id);
 
   const [copied, setCopied] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [loginHint, setLoginHint] = useState(false);
   const [draftRating, setDraftRating] = useState(5);
   const [comment, setComment] = useState('');
   const [posting, setPosting] = useState(false);
@@ -45,12 +49,13 @@ export default function DishDetailModal({
     setNow(Date.now());
   }, []);
 
-  const isFav = favorites.has(dish.id);
-  const rating = Number(dish.rating ?? 0);
-  const imageUrl = dish.image_url?.trim() || '';
+  const isFav = favorites.has(currentDish.id);
+  const rating = Number(currentDish.rating ?? 0);
+  const imageUrl = currentDish.image_url?.trim() || '';
+  const isGuest = !user || Boolean(user.is_anonymous);
   // Prefer the explicit address; fall back to the restaurant name for the query.
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    dish.address || dish.restaurant,
+    currentDish.address || currentDish.restaurant,
   )}`;
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'G';
 
@@ -64,7 +69,7 @@ export default function DishDetailModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
+      if (e.key === 'Escape' && !isEditing) handleClose();
     };
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -73,14 +78,20 @@ export default function DishDetailModal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [handleClose]);
+  }, [handleClose, isEditing]);
+
+  useEffect(() => {
+    if (!loginHint) return;
+    const timer = setTimeout(() => setLoginHint(false), 2400);
+    return () => clearTimeout(timer);
+  }, [loginHint]);
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/#dish-${dish.slug}`;
+    const url = `${window.location.origin}/#dish-${currentDish.slug}`;
     try {
       if (navigator.share) {
         await navigator.share({
-          title: `${dish.name} · ${dish.restaurant}`,
+          title: `${currentDish.name} · ${currentDish.restaurant}`,
           url,
         });
         return;
@@ -94,8 +105,16 @@ export default function DishDetailModal({
   };
 
   const handleAsk = () => {
-    onNavigateToChat(t.detail.askPrompt(dish.name, dish.restaurant));
+    onNavigateToChat(t.detail.askPrompt(currentDish.name, currentDish.restaurant));
     handleClose();
+  };
+
+  const handleEdit = () => {
+    if (isGuest) {
+      setLoginHint(true);
+      return;
+    }
+    setIsEditing(true);
   };
 
   const handlePost = async (e: React.FormEvent) => {
@@ -150,14 +169,14 @@ export default function DishDetailModal({
         onScroll={handleScroll}
         role="dialog"
         aria-modal="true"
-        aria-label={dish.restaurant}
+        aria-label={currentDish.restaurant}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="drag-handle" aria-hidden="true" />
 
         {/* Sticky mini header — appears once the sheet is expanded */}
         <div className={`sheet-sticky-bar ${expanded ? 'show' : ''}`}>
-          <span className="sticky-title">{dish.restaurant}</span>
+          <span className="sticky-title">{currentDish.restaurant}</span>
           <div className="sticky-actions">
             <button
               className="sticky-ask-btn"
@@ -183,7 +202,7 @@ export default function DishDetailModal({
           {imageUrl ? (
             <Image
               src={imageUrl}
-              alt={dish.name}
+              alt={currentDish.name}
               fill
               sizes="(max-width: 640px) 100vw, 560px"
               className="hero-img"
@@ -198,7 +217,7 @@ export default function DishDetailModal({
           <div className="hero-top">
             <button
               className={`icon-btn fav ${isFav ? 'is-fav' : ''}`}
-              onClick={() => toggleFavorite(dish.id)}
+              onClick={() => toggleFavorite(currentDish.id)}
               aria-label={isFav ? t.random.saved : t.random.favorite}
               aria-pressed={isFav}
             >
@@ -209,6 +228,14 @@ export default function DishDetailModal({
               />
             </button>
             <div className="hero-top-right">
+              <button
+                className="icon-btn"
+                onClick={handleEdit}
+                aria-label={t.detail.edit}
+                title={t.detail.edit}
+              >
+                <Pencil size={18} />
+              </button>
               <button
                 className="icon-btn"
                 onClick={handleShare}
@@ -228,14 +255,17 @@ export default function DishDetailModal({
             </div>
           </div>
           {copied && <span className="copied-toast">{t.detail.copied}</span>}
+          {loginHint && (
+            <span className="copied-toast login-toast">{t.detail.editRequireLogin}</span>
+          )}
         </div>
 
         {/* Body */}
         <div className="detail-body">
           <div className="detail-head">
             <div className="detail-head-text">
-              <h2 className="detail-title">{dish.restaurant}</h2>
-              <p className="detail-sub">{dish.name}</p>
+              <h2 className="detail-title">{currentDish.restaurant}</h2>
+              <p className="detail-sub">{currentDish.name}</p>
             </div>
             <div className="detail-head-actions">
               <button className="ask-ai-pill" onClick={handleAsk}>
@@ -249,7 +279,7 @@ export default function DishDetailModal({
             </div>
           </div>
 
-          {dish.tag && <span className="detail-tag">{dish.tag}</span>}
+          {currentDish.tag && <span className="detail-tag">{currentDish.tag}</span>}
 
           <div className="info-list">
             <a
@@ -265,7 +295,7 @@ export default function DishDetailModal({
               <div className="info-text">
                 <span className="info-label">{t.detail.address}</span>
                 <span className="info-value">
-                  {dish.address || `${dish.restaurant} (${t.detail.directions})`}
+                  {currentDish.address || `${currentDish.restaurant} (${t.detail.directions})`}
                 </span>
               </div>
               <span className="info-arrow" aria-hidden="true">
@@ -279,18 +309,18 @@ export default function DishDetailModal({
               </span>
               <div className="info-text">
                 <span className="info-label">{t.detail.openingTime}</span>
-                <span className="info-value">{dish.opening_time || t.detail.noHours}</span>
+                <span className="info-value">{currentDish.opening_time || t.detail.noHours}</span>
               </div>
             </div>
 
-            {dish.review_note && (
+            {currentDish.review_note && (
               <div className="info-row">
                 <span className="info-icon">
                   <Sparkles size={16} />
                 </span>
                 <div className="info-text">
                   <span className="info-label">{t.detail.reviewNote}</span>
-                  <span className="info-value">{dish.review_note}</span>
+                  <span className="info-value">{currentDish.review_note}</span>
                 </div>
               </div>
             )}
@@ -391,6 +421,14 @@ export default function DishDetailModal({
           </section>
         </div>
       </div>
+
+      {isEditing && (
+        <EditDishModal
+          dish={currentDish}
+          onClose={() => setIsEditing(false)}
+          onUpdated={(updated) => setCurrentDish(updated)}
+        />
+      )}
 
       <style jsx>{`
         .detail-overlay {
@@ -578,6 +616,13 @@ export default function DishDetailModal({
           white-space: nowrap;
           animation: overlayIn 0.2s var(--ease-out) both;
           z-index: 2;
+        }
+        .login-toast {
+          bottom: 52px;
+          max-width: calc(100% - 32px);
+          white-space: normal;
+          text-align: center;
+          line-height: 1.35;
         }
         .detail-body {
           padding: 18px 18px 8px;
