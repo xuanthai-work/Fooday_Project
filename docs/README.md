@@ -10,6 +10,7 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-20-remove-redundant-hero-close-button-dish-detail-modal.md](tasks/2026-10-20-remove-redundant-hero-close-button-dish-detail-modal.md) | Remove Redundant Close Button from Hero Section in DishDetailModal | 2026-10-20 | ✅ PASS |
 | [2026-10-20-implement-edit-restaurant-and-dish-feature.md](tasks/2026-10-20-implement-edit-restaurant-and-dish-feature.md) | Implement Edit Restaurant and Dish Feature (UI + Database Policy) | 2026-10-20 | ✅ PASS |
 | [2026-10-20-switch-ai-chat-provider-to-opencode.md](tasks/2026-10-20-switch-ai-chat-provider-to-opencode.md) | Switch AI Chat Provider to OpenCode (minimax-m3.1-flash-free) | 2026-10-20 | ✅ PASS |
 | [2026-10-19-restyle-food-card-tag-to-ai-pill.md](tasks/2026-10-19-restyle-food-card-tag-to-ai-pill.md) | Redesign Food Card Type Tag to Match AI Pill Styling | 2026-10-19 | ✅ PASS |

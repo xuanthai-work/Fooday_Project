@@ -244,14 +244,6 @@ export default function DishDetailModal({
               >
                 <Share2 size={18} />
               </button>
-              <button
-                className="icon-btn"
-                onClick={handleClose}
-                aria-label={t.detail.close}
-                title={t.detail.close}
-              >
-                <X size={20} />
-              </button>
             </div>
           </div>
           {copied && <span className="copied-toast">{t.detail.copied}</span>}
