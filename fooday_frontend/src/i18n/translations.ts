@@ -200,6 +200,10 @@ const vi = {
     authFailed: 'Xác thực thất bại. Vui lòng thử lại.',
     guestFailed: 'Không thể đăng nhập với vai trò khách.',
   },
+  update: {
+    available: 'Đã có bản cập nhật mới của Fooday.',
+    action: 'Cập nhật',
+  },
 };
 
 export type Translation = typeof vi;
@@ -399,6 +403,10 @@ const en: Translation = {
     resetSent: 'Password reset instructions sent to your email.',
     authFailed: 'Authentication failed. Please try again.',
     guestFailed: 'Failed to sign in as guest.',
+  },
+  update: {
+    available: 'A new version of Fooday is available.',
+    action: 'Update',
   },
 };
 

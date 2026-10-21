@@ -13,6 +13,7 @@ Trong workspace này, **Gemini** đóng vai trò:
   2. Định nghĩa Acceptance Criteria và Verification Gates.
   3. Kích hoạt Developer Agent qua `justdoit.md`.
   4. Thực hiện kiểm thử, rà soát chất lượng code, kiến trúc, bảo mật và hồi quy sau khi Dev Agent hoàn thành (QA / Code Reviewer).
+- **Quy tắc Git**: Tuyệt đối **KHÔNG tự động chạy `git push`**. Chỉ commit cục bộ khi cần và để người dùng toàn quyền kiểm soát hoặc chỉ push khi người dùng ra lệnh rõ ràng.
 
 ---
 

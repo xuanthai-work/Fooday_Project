@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { FavoritesProvider } from '@/hooks/useFavorites';
 import AuthScreen from '@/components/AuthScreen';
 import AddDishModal from '@/components/AddDishModal';
+import UpdatePrompt from '@/components/UpdatePrompt';
 import { LanguageProvider, useTranslation } from '@/i18n/LanguageContext';
 import type { Translation } from '@/i18n/translations';
 
@@ -293,6 +294,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             }
           `}</style>
         </nav>
+
+        <UpdatePrompt />
 
         {showAdd && <AddDishModal onClose={() => setShowAdd(false)} />}
       </main>

@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Hide the floating dev indicator badge so it can't cover the bottom-left nav tab.
   devIndicators: false,
+  // Baked into the client bundle so the app can detect a newer deployment.
+  env: {
+    NEXT_PUBLIC_APP_VERSION: process.env.VERCEL_GIT_COMMIT_SHA || "dev",
+  },
   images: {
     remotePatterns: [
       {
