@@ -80,18 +80,51 @@ export default function ChatView({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ReplyRef | null>(null);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusScrollTimer = useRef<number | null>(null);
   const { favorites } = useFavorites();
   const { byId } = useFoods();
 
-  const scrollToBottom = () => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (smooth = true) => {
+    endRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  /* Hide the bottom navigation bar while the virtual keyboard is open so the
+     composer sits directly on top of it. The visualViewport listener is the
+     reliable signal on iOS Safari, where `keyboard-open` is toggled on focus
+     but the keyboard can also be dismissed without a blur event. */
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+
+    const handleResize = () => {
+      if (!vv) return;
+      const isKeyboard = window.innerHeight - vv.height > 150;
+      if (isKeyboard) {
+        document.body.classList.add('keyboard-open');
+      } else if (!document.activeElement?.classList.contains('input')) {
+        document.body.classList.remove('keyboard-open');
+      }
+    };
+
+    if (vv) {
+      vv.addEventListener('resize', handleResize);
+    }
+
+    return () => {
+      if (vv) vv.removeEventListener('resize', handleResize);
+      if (focusScrollTimer.current !== null) {
+        window.clearTimeout(focusScrollTimer.current);
+        focusScrollTimer.current = null;
+      }
+      document.body.classList.remove('keyboard-open');
+    };
+  }, []);
 
   const handleSend = async (textToSend?: string, replyOverride?: ReplyRef | null) => {
     const text = (textToSend ?? inputValue).trim();
@@ -295,7 +328,7 @@ export default function ChatView({
       </div>
 
       {/* Input */}
-      <div className="dock glass">
+      <div className={`dock glass ${isInputFocused ? 'chat-composer-focused' : ''}`}>
         {replyingTo && (
           <div className="reply-bar">
             <Reply size={16} />
@@ -315,7 +348,11 @@ export default function ChatView({
           </div>
         )}
         <div className="composer">
-          <button className="attach" aria-label={t.chat.attach}>
+          <button
+            className="attach"
+            aria-label={t.chat.attach}
+            onMouseDown={(e) => e.preventDefault()}
+          >
             <Plus size={20} />
           </button>
           <input
@@ -324,6 +361,22 @@ export default function ChatView({
             placeholder={t.chat.placeholder}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
+            onFocus={() => {
+              setIsInputFocused(true);
+              if (typeof document !== 'undefined') {
+                document.body.classList.add('keyboard-open');
+              }
+              // Wait for the keyboard to slide in, then reveal the latest message.
+              focusScrollTimer.current = window.setTimeout(() => {
+                scrollToBottom(true);
+              }, 150);
+            }}
+            onBlur={() => {
+              setIsInputFocused(false);
+              if (typeof document !== 'undefined') {
+                document.body.classList.remove('keyboard-open');
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSend();
               if (e.key === 'Escape' && replyingTo) setReplyingTo(null);
@@ -333,6 +386,7 @@ export default function ChatView({
           />
           <button
             onClick={() => handleSend()}
+            onMouseDown={(e) => e.preventDefault()}
             className="send"
             disabled={!inputValue.trim() || isLoading}
             aria-label={t.chat.send}

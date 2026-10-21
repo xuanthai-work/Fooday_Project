@@ -1,12 +1,26 @@
+import json
 import uuid
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.models import ChatRequest, ChatResponse
 from app import config
 
-router = APIRouter()
+
+def verify_internal_secret(
+    x_internal_secret: str | None = Header(None, alias="x-internal-secret"),
+) -> None:
+    """Validate internal secret header if configured on the server."""
+    if config.INTERNAL_API_SECRET:
+        if not x_internal_secret or x_internal_secret != config.INTERNAL_API_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: Invalid or missing internal secret",
+            )
+
+
+router = APIRouter(dependencies=[Depends(verify_internal_secret)])
 
 
 SYSTEM_INSTRUCTION = (
@@ -115,7 +129,7 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
                 "response_format": {"type": "json_object"},
                 "temperature": 0.7,
             },
-            timeout=25.0,
+            timeout=35.0,
         )
         resp.raise_for_status()
 

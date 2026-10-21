@@ -338,6 +338,17 @@ textarea,
   text-align: center;
 }
 
+/* ---- Mobile: hide the bottom bar while the virtual keyboard is open ----
+   The chat composer then sits directly on top of the keyboard instead of
+   being stacked above a 64px navigation bar. */
+@media (max-width: 1023px) {
+  body.keyboard-open .app-shell nav.bottom-nav,
+  .app-shell:has(.chat-composer-focused) nav.bottom-nav,
+  .app-shell:has(.chat .input:focus) nav.bottom-nav {
+    display: none !important;
+  }
+}
+
 /* ---- Desktop / large landscape: full-bleed app with a left sidebar ---- */
 @media (min-width: 1024px) {
   body {

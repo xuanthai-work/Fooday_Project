@@ -14,7 +14,14 @@ export interface ChatResponse {
   fallback?: ChatFallback | null;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2001/api/v1';
+const resolveEndpoint = (path: string): string => {
+  const env = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+  if (!env) {
+    // Relative path to Next.js local BFF route handlers
+    return `/api${path}`;
+  }
+  return `${env}${path}`;
+};
 
 export const chatService = {
   async sendMessage(
@@ -24,7 +31,7 @@ export const chatService = {
     language?: string,
   ): Promise<ChatResponse | null> {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      const response = await fetch(resolveEndpoint('/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -60,7 +67,7 @@ export interface DishImage {
 export const dishImageService = {
   async search(q: string): Promise<DishImage[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/dish-image?q=${encodeURIComponent(q)}`);
+      const response = await fetch(resolveEndpoint('/dish-image') + `?q=${encodeURIComponent(q)}`);
       if (!response.ok) return [];
       const data = await response.json();
       return (data.images ?? []) as DishImage[];

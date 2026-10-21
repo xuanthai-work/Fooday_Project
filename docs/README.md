@@ -10,6 +10,9 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-21-fix-missing-json-import-chat-api.md](tasks/2026-10-21-fix-missing-json-import-chat-api.md) | Fix Missing JSON Import in Chat API (Fix AI Fallback Error) | 2026-10-21 | ✅ PASS |
+| [2026-10-21-auto-hide-bottom-nav-on-keyboard-focus.md](tasks/2026-10-21-auto-hide-bottom-nav-on-keyboard-focus.md) | Auto-Hide Bottom Navigation Bar on Mobile Keyboard Focus (ChatView) | 2026-10-21 | ✅ PASS |
+| [2026-10-21-secure-chat-api-bff-proxy-and-internal-secret.md](tasks/2026-10-21-secure-chat-api-bff-proxy-and-internal-secret.md) | Secure Chat API with BFF Next.js Proxy & Internal Secret Token | 2026-10-21 | ✅ PASS |
 | [2026-10-21-fix-dumpling-logo-lift-pwa-bottom-nav-and-lcp.md](tasks/2026-10-21-fix-dumpling-logo-lift-pwa-bottom-nav-and-lcp.md) | Fix Dumpling Logo Cropping, Lift iOS PWA Bottom Nav & Fix LCP Warning | 2026-10-21 | ✅ PASS |
 | [2026-10-21-live-update-notification-pwa.md](tasks/2026-10-21-live-update-notification-pwa.md) | Live Update Notification for Fooday PWA | 2026-10-21 | ✅ PASS |
 | [2026-10-21-integrate-brand-logo-and-foodie-avatar.md](tasks/2026-10-21-integrate-brand-logo-and-foodie-avatar.md) | Integrate Fooday Brand Logo and Foodie AI Mascot Avatar | 2026-10-21 | ✅ PASS |

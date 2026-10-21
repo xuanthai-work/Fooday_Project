@@ -14,6 +14,7 @@ OPENCODE_API_KEY = os.getenv("OPENCODE_API_KEY")
 OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
 OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "minimax-m3.1-flash-free")
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET")
 
 supabase: Client | None = (
     create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
