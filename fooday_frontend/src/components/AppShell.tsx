@@ -187,7 +187,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               position: relative;
               display: flex;
               align-items: center;
-              padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+              padding: 10px 12px calc(18px + env(safe-area-inset-bottom, 16px));
               border-top: 1px solid var(--border);
               box-shadow: var(--shadow-nav);
               z-index: 30;
@@ -207,6 +207,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               display: flex;
               align-items: center;
               justify-content: space-around;
+              gap: 4px;
             }
             /* next/link renders its own intrinsic <a>, so styled-jsx can't attach
                its scope class to it — these must be :global() to apply. */
@@ -249,7 +250,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               justify-content: center;
               width: 52px;
               height: 52px;
-              margin: 0 6px;
+              margin: 0 12px;
               border-radius: var(--r-full);
               border: none;
               background: var(--grad-primary);

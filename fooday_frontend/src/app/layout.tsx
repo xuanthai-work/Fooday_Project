@@ -23,8 +23,8 @@ export const metadata: Metadata = {
   keywords:
     "food, restaurant, what to eat, AI, menu, recommendation, phở, burger, ramen",
   icons: {
-    icon: "/fooday-mark.png",
-    apple: "/fooday-mark.png",
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
     shortcut: "/fooday-mark.png",
   },
 };
@@ -33,6 +33,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // "cover" lets the app extend under the notch / rounded corners and makes
+  // env(safe-area-inset-*) resolve to real values on iOS (PWA & Safari).
+  viewportFit: "cover",
   themeColor: "#FF6B35",
 };
 

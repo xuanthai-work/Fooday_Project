@@ -198,13 +198,13 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         </div>
       ) : filteredFoods.length > 0 ? (
         <div className="grid">
-          {filteredFoods.map((item, i) => {
+          {filteredFoods.map((item, index) => {
             const isFav = favorites.has(item.id);
             return (
               <article
                 key={item.id}
                 className="card"
-                style={{ animationDelay: `${Math.min(i, 8) * 55}ms` }}
+                style={{ animationDelay: `${Math.min(index, 8) * 55}ms` }}
                 role="button"
                 tabIndex={0}
                 onClick={() => setSelectedDish(item)}
@@ -223,6 +223,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                     sizes="(max-width: 640px) 50vw, 290px"
                     className="card-img"
                     style={{ objectFit: 'cover' }}
+                    priority={index < 4}
                   />
                   {item.name && <span className="card-type-tag">{item.name}</span>}
                   {item.tag && <span className="card-tag glass">{item.tag}</span>}
