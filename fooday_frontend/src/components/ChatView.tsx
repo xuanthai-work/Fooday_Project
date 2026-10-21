@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, Plus, Bot } from 'lucide-react';
+import Image from 'next/image';
+import { Send, Plus } from 'lucide-react';
 import { chatService, ChatResponse } from '@/services/api';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useFoods } from '@/hooks/useFoods';
@@ -106,7 +107,14 @@ export default function ChatView({
       {/* Header */}
       <header className="chat-header glass">
         <div className="avatar">
-          <Bot size={22} color="#fff" />
+          <Image
+            src="/foodie-avatar.png"
+            alt={t.chat.botName}
+            fill
+            sizes="46px"
+            style={{ objectFit: 'cover', borderRadius: '50%' }}
+            preload
+          />
           <span className="online" />
         </div>
         <div className="meta">
@@ -125,32 +133,56 @@ export default function ChatView({
             className={`row ${msg.isUser ? 'user' : 'ai'}`}
             style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
           >
-            <div className={`bubble ${msg.isUser ? 'user' : 'ai'}`}>
-              <p className="text">{msg.message}</p>
-              {!msg.isUser && msg.suggestedDishes && msg.suggestedDishes.length > 0 && (
-                <div className="chips">
-                  {msg.suggestedDishes.map((dish) => (
-                    <button
-                      key={dish}
-                      onClick={() => handleChip(dish, msg.chipsVerbatim)}
-                      className="chip"
-                    >
-                      {dish}
-                    </button>
-                  ))}
-                </div>
-              )}
+            {!msg.isUser && (
+              <div className="bot-avatar-mini">
+                <Image
+                  src="/foodie-avatar.png"
+                  alt={t.chat.botName}
+                  width={28}
+                  height={28}
+                  style={{ borderRadius: '50%', objectFit: 'cover' }}
+                />
+              </div>
+            )}
+            <div className="row-body">
+              <div className={`bubble ${msg.isUser ? 'user' : 'ai'}`}>
+                <p className="text">{msg.message}</p>
+                {!msg.isUser && msg.suggestedDishes && msg.suggestedDishes.length > 0 && (
+                  <div className="chips">
+                    {msg.suggestedDishes.map((dish) => (
+                      <button
+                        key={dish}
+                        onClick={() => handleChip(dish, msg.chipsVerbatim)}
+                        className="chip"
+                      >
+                        {dish}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span className="time">{msg.time}</span>
             </div>
-            <span className="time">{msg.time}</span>
           </div>
         ))}
 
         {isLoading && (
-          <div className="row ai">
-            <div className="bubble ai typing">
-              <span className="dot" />
-              <span className="dot" />
-              <span className="dot" />
+          <div className="row ai row--typing">
+            <div className="bot-avatar-mini">
+              <Image
+                src="/foodie-avatar.png"
+                alt={t.chat.botName}
+                width={28}
+                height={28}
+                style={{ borderRadius: '50%', objectFit: 'cover' }}
+              />
+            </div>
+            <div className="row-body">
+              <div className="bubble ai typing">
+                <span className="dot" />
+                <span className="dot" />
+                <span className="dot" />
+              </div>
             </div>
           </div>
         )}
@@ -261,13 +293,39 @@ export default function ChatView({
           max-width: 88%;
           animation: bubbleIn 0.4s var(--ease-out) both;
         }
+        .row-body {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+        }
         .row.user {
           align-self: flex-end;
           align-items: flex-end;
         }
+        .row.user .row-body {
+          align-items: flex-end;
+        }
         .row.ai {
           align-self: flex-start;
+          flex-direction: row;
+          align-items: flex-end;
+          gap: 8px;
+        }
+        .row.ai .row-body {
           align-items: flex-start;
+        }
+        .bot-avatar-mini {
+          flex-shrink: 0;
+          width: 28px;
+          height: 28px;
+          border-radius: var(--r-full);
+          overflow: hidden;
+          box-shadow: var(--shadow-sm);
+          /* lift the avatar so its bottom lines up with the bubble's bottom edge */
+          margin-bottom: 22px;
+        }
+        .row--typing .bot-avatar-mini {
+          margin-bottom: 0;
         }
         .bubble {
           padding: 12px 16px;

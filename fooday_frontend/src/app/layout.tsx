@@ -22,6 +22,11 @@ export const metadata: Metadata = {
     "Your AI-powered food companion. Discover dishes you'll love and ask Foodie AI what to eat today.",
   keywords:
     "food, restaurant, what to eat, AI, menu, recommendation, phở, burger, ramen",
+  icons: {
+    icon: "/fooday-mark.png",
+    apple: "/fooday-mark.png",
+    shortcut: "/fooday-mark.png",
+  },
 };
 
 export const viewport: Viewport = {
