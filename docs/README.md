@@ -10,6 +10,7 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-21-update-review-cooldown-to-45-days.md](tasks/2026-10-21-update-review-cooldown-to-45-days.md) | Update Review Cooldown to 45 Days | 2026-10-21 | ✅ PASS |
 | [2026-10-21-fix-missing-json-import-chat-api.md](tasks/2026-10-21-fix-missing-json-import-chat-api.md) | Fix Missing JSON Import in Chat API (Fix AI Fallback Error) | 2026-10-21 | ✅ PASS |
 | [2026-10-21-auto-hide-bottom-nav-on-keyboard-focus.md](tasks/2026-10-21-auto-hide-bottom-nav-on-keyboard-focus.md) | Auto-Hide Bottom Navigation Bar on Mobile Keyboard Focus (ChatView) | 2026-10-21 | ✅ PASS |
 | [2026-10-21-secure-chat-api-bff-proxy-and-internal-secret.md](tasks/2026-10-21-secure-chat-api-bff-proxy-and-internal-secret.md) | Secure Chat API with BFF Next.js Proxy & Internal Secret Token | 2026-10-21 | ✅ PASS |

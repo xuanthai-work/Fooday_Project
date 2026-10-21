@@ -23,9 +23,11 @@ export type ReviewPostResult = 'ok' | 'empty' | 'cooldown' | 'failed';
 const COLUMNS = 'id, food_id, user_id, user_name, rating, comment, image_url, created_at';
 const COLUMNS_BASE = 'id, food_id, user_id, user_name, rating, comment, created_at';
 
-export function addMonths(date: Date, months: number): Date {
+export const REVIEW_COOLDOWN_DAYS = 45;
+
+export function addDays(date: Date, days: number): Date {
   const next = new Date(date);
-  next.setMonth(next.getMonth() + months);
+  next.setDate(next.getDate() + days);
   return next;
 }
 
@@ -38,7 +40,7 @@ export function cooldownUntil(reviews: Review[], userId: string | null, extraAt?
   if (extraAt) stamps.push(extraAt);
   if (stamps.length === 0) return null;
   const latest = stamps.reduce((a, b) => (a > b ? a : b));
-  const until = addMonths(new Date(latest), 3);
+  const until = addDays(new Date(latest), REVIEW_COOLDOWN_DAYS);
   return until.getTime() > Date.now() ? until : null;
 }
 

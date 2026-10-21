@@ -342,13 +342,13 @@ begin
     from public.review_limits
     where user_id = new.user_id
       and food_id = new.food_id
-      and reviewed_at > now() - interval '3 months'
+      and reviewed_at > now() - interval '45 days'
   ) or exists (
     select 1
     from public.reviews
     where user_id = new.user_id
       and food_id = new.food_id
-      and created_at > now() - interval '3 months'
+      and created_at > now() - interval '45 days'
   ) then
     raise exception 'review_cooldown';
   end if;

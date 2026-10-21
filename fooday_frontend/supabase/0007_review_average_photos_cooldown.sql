@@ -1,5 +1,5 @@
 -- ============================================================================
--- Fooday - Review average, one review per account per 3 months, review photos.
+-- Fooday - Review average, one review per account per 45 days, review photos.
 -- Run in Supabase Dashboard -> SQL Editor (idempotent - safe to re-run).
 -- ============================================================================
 
@@ -7,7 +7,7 @@ alter table public.reviews
   add column if not exists image_url text;
 
 -- Remembers the last review even if the comment is later deleted,
--- so deleting a review does not reset the 3-month limit.
+-- so deleting a review does not reset the 45-day limit.
 create table if not exists public.review_limits (
   user_id     uuid not null references auth.users (id) on delete cascade,
   food_id     bigint not null references public.foods (id) on delete cascade,
@@ -46,13 +46,13 @@ begin
     from public.review_limits
     where user_id = new.user_id
       and food_id = new.food_id
-      and reviewed_at > now() - interval '3 months'
+      and reviewed_at > now() - interval '45 days'
   ) or exists (
     select 1
     from public.reviews
     where user_id = new.user_id
       and food_id = new.food_id
-      and created_at > now() - interval '3 months'
+      and created_at > now() - interval '45 days'
   ) then
     raise exception 'review_cooldown';
   end if;
