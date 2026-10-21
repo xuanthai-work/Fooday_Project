@@ -10,6 +10,12 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-20-multi-photo-carousel-and-photo-management.md](tasks/2026-10-20-multi-photo-carousel-and-photo-management.md) | Multi-Photo Carousel (Google Maps Style) and Photo Management (Add/Delete) | 2026-10-20 | ✅ PASS |
+| [2026-10-20-gitignore-assets-and-remove-paste-url.md](tasks/2026-10-20-gitignore-assets-and-remove-paste-url.md) | Gitignore Assets and Completely Remove Paste Image URL Feature | 2026-10-20 | ✅ PASS |
+| [2026-10-20-streamline-image-picker-ui-modals.md](tasks/2026-10-20-streamline-image-picker-ui-modals.md) | Streamline Image Picker UI in EditDishModal and AddDishModal | 2026-10-20 | ✅ PASS |
+| [2026-10-20-remove-redundant-hero-close-button-dish-detail-modal.md](tasks/2026-10-20-remove-redundant-hero-close-button-dish-detail-modal.md) | Remove Redundant Close Button from Hero Section in DishDetailModal | 2026-10-20 | ✅ PASS |
+| [2026-10-20-implement-edit-restaurant-and-dish-feature.md](tasks/2026-10-20-implement-edit-restaurant-and-dish-feature.md) | Implement Edit Restaurant and Dish Feature (UI + Database Policy) | 2026-10-20 | ✅ PASS |
+| [2026-10-20-switch-ai-chat-provider-to-opencode.md](tasks/2026-10-20-switch-ai-chat-provider-to-opencode.md) | Switch AI Chat Provider to OpenCode (minimax-m3.1-flash-free) | 2026-10-20 | ✅ PASS |
 | [2026-10-19-restyle-food-card-tag-to-ai-pill.md](tasks/2026-10-19-restyle-food-card-tag-to-ai-pill.md) | Redesign Food Card Type Tag to Match AI Pill Styling | 2026-10-19 | ✅ PASS |
 | [2026-10-19-warm-culinary-palette-and-uxui-redesign.md](tasks/2026-10-19-warm-culinary-palette-and-uxui-redesign.md) | Full-App Redesign: Warm Culinary Palette & Tactile UX/UI Overhaul | 2026-10-19 | ✅ PASS |
 | [2026-10-19-mood-task-categories-dashboard.md](tasks/2026-10-19-mood-task-categories-dashboard.md) | Redesign Dashboard Categories by Real-World Food Mood & Task | 2026-10-19 | ✅ PASS |

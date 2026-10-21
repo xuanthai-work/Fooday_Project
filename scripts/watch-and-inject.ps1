@@ -1,6 +1,12 @@
 # File: scripts/watch-and-inject.ps1
 # Theo doi justdoit.md va dieu phoi OpenCode voi Context Isolation va Telemetry
 
+# Set UTF-8 encoding toan dien cho Console va Pipeline (Chong loi font tieng Viet / ky tu dac biet)
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
+
 $taskFile = Join-Path $PSScriptRoot "..\justdoit.md"
 $taskFile = [System.IO.Path]::GetFullPath($taskFile)
 $logDir   = Join-Path $PSScriptRoot "..\docs\logs"
@@ -19,7 +25,8 @@ Write-Host ""
 while ($true) {
     if (Test-Path $taskFile) {
         try {
-            $content = [System.IO.File]::ReadAllText($taskFile)
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            $content = [System.IO.File]::ReadAllText($taskFile, [System.Text.Encoding]::UTF8)
             
             if ($content -match "status:\s*APPROVED") {
                 Write-Host ""
@@ -28,7 +35,7 @@ while ($true) {
                 
                 # 1. Doi status sang IN_PROGRESS
                 $updatedContent = $content -replace "status:\s*APPROVED", "status: IN_PROGRESS"
-                [System.IO.File]::WriteAllText($taskFile, $updatedContent)
+                [System.IO.File]::WriteAllText($taskFile, $updatedContent, $utf8NoBom)
 
                 # 2. Xac dinh che do Session (Chong tran Context)
                 $isContinue = $content -match "session:\s*continue"
@@ -61,30 +68,32 @@ while ($true) {
                 $gitDiffSummary  = (git diff --stat) | Out-String
 
                 # 5. Cap nhat ket qua vao justdoit.md
-                $finalContent = [System.IO.File]::ReadAllText($taskFile)
+                $finalContent = [System.IO.File]::ReadAllText($taskFile, [System.Text.Encoding]::UTF8)
                 $finalStatus = if ($exitCode -eq 0) { "DONE" } else { "FAILED" }
 
-                $summaryReport = @"
-
----
-## Dev Execution Telemetry
-- **Timestamp**: $((Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
-- **Exit Code**: $exitCode ($finalStatus)
-- **Session Mode**: $(if ($isContinue) { "continue" } else { "fresh" })
-- **Changed Files**:
-```text
-$gitChangedFiles
-```
-- **Git Diff Summary**:
-```text
-$gitDiffSummary
-```
-> Full log terminal: `docs/logs/last_opencode_run.log`
-"@
+                $nowStr = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                $sessionModeStr = if ($isContinue) { "continue" } else { "fresh" }
+                $summaryReport = @(
+                    "",
+                    "---",
+                    "## Dev Execution Telemetry",
+                    "- **Timestamp**: $nowStr",
+                    "- **Exit Code**: $exitCode ($finalStatus)",
+                    "- **Session Mode**: $sessionModeStr",
+                    "- **Changed Files**:",
+                    '```text',
+                    $gitChangedFiles.TrimEnd(),
+                    '```',
+                    "- **Git Diff Summary**:",
+                    '```text',
+                    $gitDiffSummary.TrimEnd(),
+                    '```',
+                    '> Full log terminal: `docs/logs/last_opencode_run.log`'
+                ) -join "`n"
 
                 $finalContent = $finalContent -replace "status:\s*IN_PROGRESS", "status: $finalStatus"
                 $finalContent = $finalContent + "`n" + $summaryReport
-                [System.IO.File]::WriteAllText($taskFile, $finalContent)
+                [System.IO.File]::WriteAllText($taskFile, $finalContent, $utf8NoBom)
 
                 Write-Host "Da cap nhat justdoit.md sang status: $finalStatus kem Telemetry!" -ForegroundColor $(if ($exitCode -eq 0) { "Green" } else { "Red" })
                 Write-Host "Dang tiep tuc theo doi task tiep theo..." -ForegroundColor Gray

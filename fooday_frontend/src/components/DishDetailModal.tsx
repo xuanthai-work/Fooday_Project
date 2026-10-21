@@ -3,13 +3,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus } from 'lucide-react';
+import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import type { Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useAuth } from '@/hooks/useAuth';
 import { useReviews } from '@/hooks/useReviews';
 import { useTranslation } from '@/i18n/LanguageContext';
+import EditDishModal from './EditDishModal';
 
 interface DishDetailModalProps {
   dish: Food;
@@ -25,12 +26,15 @@ export default function DishDetailModal({
   const { t, lang } = useTranslation();
   const { user } = useAuth();
   const { favorites, toggleFavorite } = useFavorites();
+  const [currentDish, setCurrentDish] = useState<Food>(dish);
   const { reviews, loading: reviewsLoading, addReview, deleteReview, totalCount, averageRating, blockedUntil } =
-    useReviews(dish.id);
+    useReviews(currentDish.id);
 
   const [copied, setCopied] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [loginHint, setLoginHint] = useState(false);
   const [draftRating, setDraftRating] = useState(5);
   const [comment, setComment] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -38,8 +42,10 @@ export default function DishDetailModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [activeImgIndex, setActiveImgIndex] = useState(0);
   const closingRef = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   // Only render the portal once mounted on the client (SSR-safe).
   const [mounted, setMounted] = useState(false);
@@ -50,13 +56,22 @@ export default function DishDetailModal({
     setNow(Date.now());
   }, []);
 
-  const isFav = favorites.has(dish.id);
-  const seededRating = Number(dish.rating ?? 0);
+  const isFav = favorites.has(currentDish.id);
+  const seededRating = Number(currentDish.rating ?? 0);
   const rating = totalCount > 0 ? averageRating : seededRating;
-  const imageUrl = dish.image_url?.trim() || '';
+  const images: string[] =
+    currentDish.images && currentDish.images.length > 0
+      ? currentDish.images
+      : currentDish.image_url
+        ? [currentDish.image_url]
+        : [];
+  const safeImgIndex = images.length
+    ? Math.min(activeImgIndex, images.length - 1)
+    : 0;
+  const isGuest = !user || Boolean(user.is_anonymous);
   // Prefer the explicit address; fall back to the restaurant name for the query.
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    dish.address || dish.restaurant,
+    currentDish.address || currentDish.restaurant,
   )}`;
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'G';
 
@@ -77,7 +92,7 @@ export default function DishDetailModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
+      if (e.key === 'Escape' && !isEditing) handleClose();
     };
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -86,14 +101,20 @@ export default function DishDetailModal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [handleClose]);
+  }, [handleClose, isEditing]);
+
+  useEffect(() => {
+    if (!loginHint) return;
+    const timer = setTimeout(() => setLoginHint(false), 2400);
+    return () => clearTimeout(timer);
+  }, [loginHint]);
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/#dish-${dish.slug}`;
+    const url = `${window.location.origin}/#dish-${currentDish.slug}`;
     try {
       if (navigator.share) {
         await navigator.share({
-          title: `${dish.name} · ${dish.restaurant}`,
+          title: `${currentDish.name} · ${currentDish.restaurant}`,
           url,
         });
         return;
@@ -107,7 +128,7 @@ export default function DishDetailModal({
   };
 
   const handleAsk = () => {
-    onNavigateToChat(t.detail.askPrompt(dish.name, dish.restaurant));
+    onNavigateToChat(t.detail.askPrompt(currentDish.name, currentDish.restaurant));
     handleClose();
   };
 
@@ -129,6 +150,14 @@ export default function DishDetailModal({
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleEdit = () => {
+    if (isGuest) {
+      setLoginHint(true);
+      return;
+    }
+    setIsEditing(true);
   };
 
   const handlePost = async (e: React.FormEvent) => {
@@ -154,6 +183,14 @@ export default function DishDetailModal({
     const el = sheetRef.current;
     if (!el) return;
     setExpanded(el.scrollTop > 24);
+  };
+
+  // Keep the photo counter in sync with the horizontal swipe position.
+  const handleCarouselScroll = () => {
+    const el = carouselRef.current;
+    if (!el || images.length === 0) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setActiveImgIndex(Math.max(0, Math.min(idx, images.length - 1)));
   };
 
   // Inlined (not a child component) so styled-jsx scoping still applies.
@@ -191,14 +228,14 @@ export default function DishDetailModal({
         onScroll={handleScroll}
         role="dialog"
         aria-modal="true"
-        aria-label={dish.restaurant}
+        aria-label={currentDish.restaurant}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="drag-handle" aria-hidden="true" />
 
         {/* Sticky mini header — appears once the sheet is expanded */}
         <div className={`sheet-sticky-bar ${expanded ? 'show' : ''}`}>
-          <span className="sticky-title">{dish.restaurant}</span>
+          <span className="sticky-title">{currentDish.restaurant}</span>
           <div className="sticky-actions">
             <button
               className="sticky-ask-btn"
@@ -219,17 +256,30 @@ export default function DishDetailModal({
           </div>
         </div>
 
-        {/* Hero */}
+        {/* Hero — Google Maps style swipeable photo carousel */}
         <div className="hero">
-          {imageUrl ? (
-            <Image
-              src={imageUrl}
-              alt={dish.name}
-              fill
-              sizes="(max-width: 640px) 100vw, 560px"
-              className="hero-img"
-              style={{ objectFit: 'cover' }}
-            />
+          {images.length > 0 ? (
+            <>
+              <div className="carousel-track" ref={carouselRef} onScroll={handleCarouselScroll}>
+                {images.map((src, i) => (
+                  <div key={`${src}-${i}`} className="carousel-slide">
+                    <Image
+                      src={src}
+                      alt={`${currentDish.name} ${i + 1}`}
+                      fill
+                      sizes="(max-width: 640px) 100vw, 560px"
+                      style={{ objectFit: 'cover' }}
+                      priority={i === 0}
+                    />
+                  </div>
+                ))}
+              </div>
+              {images.length > 1 && (
+                <span className="carousel-badge">
+                  {safeImgIndex + 1} / {images.length}
+                </span>
+              )}
+            </>
           ) : (
             <div className="hero-fallback" aria-hidden="true">
               <Sparkles size={40} />
@@ -239,7 +289,7 @@ export default function DishDetailModal({
           <div className="hero-top">
             <button
               className={`icon-btn fav ${isFav ? 'is-fav' : ''}`}
-              onClick={() => toggleFavorite(dish.id)}
+              onClick={() => toggleFavorite(currentDish.id)}
               aria-label={isFav ? t.random.saved : t.random.favorite}
               aria-pressed={isFav}
             >
@@ -252,31 +302,34 @@ export default function DishDetailModal({
             <div className="hero-top-right">
               <button
                 className="icon-btn"
+                onClick={handleEdit}
+                aria-label={t.detail.edit}
+                title={t.detail.edit}
+              >
+                <Pencil size={18} />
+              </button>
+              <button
+                className="icon-btn"
                 onClick={handleShare}
                 aria-label={t.detail.share}
                 title={t.detail.share}
               >
                 <Share2 size={18} />
               </button>
-              <button
-                className="icon-btn"
-                onClick={handleClose}
-                aria-label={t.detail.close}
-                title={t.detail.close}
-              >
-                <X size={20} />
-              </button>
             </div>
           </div>
           {copied && <span className="copied-toast">{t.detail.copied}</span>}
+          {loginHint && (
+            <span className="copied-toast login-toast">{t.detail.editRequireLogin}</span>
+          )}
         </div>
 
         {/* Body */}
         <div className="detail-body">
           <div className="detail-head">
             <div className="detail-head-text">
-              <h2 className="detail-title">{dish.restaurant}</h2>
-              <p className="detail-sub">{dish.name}</p>
+              <h2 className="detail-title">{currentDish.restaurant}</h2>
+              <p className="detail-sub">{currentDish.name}</p>
             </div>
             <div className="detail-head-actions">
               <button className="ask-ai-pill" onClick={handleAsk}>
@@ -290,7 +343,7 @@ export default function DishDetailModal({
             </div>
           </div>
 
-          {dish.tag && <span className="detail-tag">{dish.tag}</span>}
+          {currentDish.tag && <span className="detail-tag">{currentDish.tag}</span>}
 
           <div className="info-list">
             <a
@@ -306,7 +359,7 @@ export default function DishDetailModal({
               <div className="info-text">
                 <span className="info-label">{t.detail.address}</span>
                 <span className="info-value">
-                  {dish.address || `${dish.restaurant} (${t.detail.directions})`}
+                  {currentDish.address || `${currentDish.restaurant} (${t.detail.directions})`}
                 </span>
               </div>
               <span className="info-arrow" aria-hidden="true">
@@ -320,18 +373,18 @@ export default function DishDetailModal({
               </span>
               <div className="info-text">
                 <span className="info-label">{t.detail.openingTime}</span>
-                <span className="info-value">{dish.opening_time || t.detail.noHours}</span>
+                <span className="info-value">{currentDish.opening_time || t.detail.noHours}</span>
               </div>
             </div>
 
-            {dish.review_note && (
+            {currentDish.review_note && (
               <div className="info-row">
                 <span className="info-icon">
                   <Sparkles size={16} />
                 </span>
                 <div className="info-text">
                   <span className="info-label">{t.detail.reviewNote}</span>
-                  <span className="info-value">{dish.review_note}</span>
+                  <span className="info-value">{currentDish.review_note}</span>
                 </div>
               </div>
             )}
@@ -493,6 +546,18 @@ export default function DishDetailModal({
         </div>
       </div>
 
+      {isEditing && (
+        <EditDishModal
+          dish={currentDish}
+          onClose={() => setIsEditing(false)}
+          onUpdated={(updated) => {
+            setCurrentDish(updated);
+            setActiveImgIndex(0);
+            carouselRef.current?.scrollTo({ left: 0 });
+          }}
+        />
+      )}
+
       <style jsx>{`
         .detail-overlay {
           position: fixed;
@@ -612,8 +677,42 @@ export default function DishDetailModal({
           background: var(--surface-2);
           overflow: hidden;
         }
-        .hero-img {
-          object-fit: cover;
+        .carousel-track {
+          display: flex;
+          overflow-x: auto;
+          overflow-y: hidden;
+          scroll-snap-type: x mandatory;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          width: 100%;
+          height: 100%;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior-x: contain;
+        }
+        .carousel-track::-webkit-scrollbar {
+          display: none;
+        }
+        .carousel-slide {
+          flex: 0 0 100%;
+          min-width: 100%;
+          height: 100%;
+          scroll-snap-align: start;
+          position: relative;
+        }
+        .carousel-badge {
+          position: absolute;
+          bottom: 12px;
+          right: 14px;
+          background: rgba(0, 0, 0, 0.65);
+          color: #fff;
+          padding: 4px 10px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 700;
+          z-index: 2;
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          pointer-events: none;
         }
         .hero-fallback {
           position: absolute;
@@ -679,6 +778,13 @@ export default function DishDetailModal({
           white-space: nowrap;
           animation: overlayIn 0.2s var(--ease-out) both;
           z-index: 2;
+        }
+        .login-toast {
+          bottom: 52px;
+          max-width: calc(100% - 32px);
+          white-space: normal;
+          text-align: center;
+          line-height: 1.35;
         }
         .detail-body {
           padding: 18px 18px 8px;

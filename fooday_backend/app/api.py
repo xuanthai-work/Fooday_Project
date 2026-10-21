@@ -1,20 +1,12 @@
-import json
+import uuid
 
 import httpx
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
-from google.genai import types
 
 from app.models import ChatRequest, ChatResponse
 from app import config
 
 router = APIRouter()
-
-
-# Structured shape we ask Gemini to return.
-class AiSuggestion(BaseModel):
-    reply: str
-    suggested_dishes: list[str]
 
 
 SYSTEM_INSTRUCTION = (
@@ -28,12 +20,12 @@ SYSTEM_INSTRUCTION = (
 # System fallbacks. The app default language is Vietnamese.
 FALLBACKS = {
     "vi": {
-        "unconfigured": "Mình chưa được cấu hình trên máy chủ (thiếu khóa Gemini hoặc Supabase).",
+        "unconfigured": "Mình chưa được cấu hình trên máy chủ (thiếu khóa OpenCode hoặc Supabase).",
         "error": "Xin lỗi, mình chưa nghĩ ra gợi ý lúc này. Bạn thử lại sau một chút nhé.",
         "empty": "Đây là vài gợi ý cho bạn!",
     },
     "en": {
-        "unconfigured": "The AI isn't configured on the server yet (missing GEMINI/Supabase keys).",
+        "unconfigured": "The AI isn't configured on the server yet (missing OPENCODE_API_KEY or Supabase keys).",
         "error": "Sorry, I couldn't think of a recommendation just now. Please try again in a moment.",
         "empty": "Here are a few ideas for you!",
     },
@@ -55,13 +47,23 @@ def _format_catalog(foods: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _parse_json_object(content: str) -> dict:
+    """Parse a JSON object, tolerating accidental markdown code fences."""
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+    return json.loads(text.strip())
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest) -> ChatResponse:
     """Generate a recommendation grounded in the real Supabase foods catalog."""
     lang = _lang(request)
     copy = FALLBACKS[lang]
 
-    if config.gemini is None or config.supabase is None:
+    if config.OPENCODE_API_KEY is None or config.supabase is None:
         return ChatResponse(
             reply=copy["unconfigured"],
             action=None,
@@ -89,18 +91,36 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
             f"{fav_line}\n\nUser message: {request.user_message}"
         )
 
-        resp = config.gemini.models.generate_content(
-            model=config.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                response_mime_type="application/json",
-                response_schema=AiSuggestion,
-                temperature=0.7,
-            ),
+        resp = httpx.post(
+            f"{config.OPENCODE_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {config.OPENCODE_API_KEY}",
+                "Content-Type": "application/json",
+                "User-Agent": "opencode/1.0",
+                "x-opencode-session": str(uuid.uuid4()),
+            },
+            json={
+                "model": config.OPENCODE_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"{SYSTEM_INSTRUCTION}\n"
+                            "IMPORTANT: Output MUST be a valid JSON object with exactly two keys: "
+                            '"reply" (string) and "suggested_dishes" (array of exact catalog dish name strings).'
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.7,
+            },
+            timeout=25.0,
         )
+        resp.raise_for_status()
 
-        data = json.loads(resp.text)
+        content = resp.json()["choices"][0]["message"]["content"]
+        data = _parse_json_object(content)
         raw_reply = (data.get("reply") or "").strip()
         reply = raw_reply or copy["empty"]
         # validate suggestions against the catalog (no hallucinated dishes)

@@ -2,4 +2,4 @@ fastapi
 uvicorn
 python-dotenv
 supabase
-google-genai
+httpx
