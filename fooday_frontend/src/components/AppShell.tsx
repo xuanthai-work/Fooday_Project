@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, Sparkles, User as UserIcon, Plus, Dices } from 'lucide-react';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
@@ -65,7 +66,14 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     return (
       <main className="auth-shell" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <div className="splash-logo animate-pulse">
-          <Sparkles size={36} color="var(--primary-contrast)" />
+          <Image
+            src="/fooday-mark.png"
+            alt="Fooday"
+            width={56}
+            height={56}
+            style={{ borderRadius: 'var(--r-lg)', objectFit: 'cover' }}
+            preload
+          />
         </div>
         <style jsx>{`
           .splash-logo {
@@ -114,9 +122,16 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         {/* Navigation — bottom bar (center + FAB) on mobile, left sidebar on desktop */}
         <nav className="bottom-nav glass" aria-label="Primary">
           <div className="nav-brand" aria-hidden="true">
-            <span className="nav-brand-badge">
-              <Sparkles size={18} />
-            </span>
+            <div className="nav-brand-badge">
+              <Image
+                src="/fooday-mark.png"
+                alt="Fooday"
+                width={28}
+                height={28}
+                style={{ borderRadius: 'var(--r-sm)', objectFit: 'cover' }}
+                preload
+              />
+            </div>
             <span className="nav-brand-text">Fooday</span>
           </div>
 

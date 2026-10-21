@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, Plus, Bot, Heart, Reply, X } from 'lucide-react';
+import Image from 'next/image';
+import { Send, Plus, Heart, Reply, X } from 'lucide-react';
 import { chatService, type ChatResponse } from '@/services/api';
 import type { Translation } from '@/i18n/translations';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -173,7 +174,14 @@ export default function ChatView({
       {/* Header */}
       <header className="chat-header glass">
         <div className="avatar">
-          <Bot size={22} color="#fff" />
+          <Image
+            src="/foodie-avatar.png"
+            alt={t.chat.botName}
+            fill
+            sizes="46px"
+            style={{ objectFit: 'cover', borderRadius: '50%' }}
+            preload
+          />
           <span className="online" />
         </div>
         <div className="meta">
@@ -192,70 +200,94 @@ export default function ChatView({
             className={`row ${msg.isUser ? 'user' : 'ai'}`}
             style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
           >
-            <div className="bubble-line">
-              <div className={`bubble-wrap ${msg.liked ? 'liked' : ''}`}>
-                <div className={`bubble ${msg.isUser ? 'user' : 'ai'}`}>
-                  {msg.replyTo && (
-                    <div className="quote">
-                      <span className="quote-label">{t.chat.botName}</span>
-                      <span className="quote-text">{msg.replyTo.text}</span>
-                    </div>
-                  )}
-                  <p className="text">{msg.message}</p>
-                  {!msg.isUser && msg.suggestedDishes && msg.suggestedDishes.length > 0 && (
-                    <div className="chips">
-                      {msg.suggestedDishes.map((dish) => (
-                        <button
-                          key={dish}
-                          onClick={() => handleChip(dish, msg.chipsVerbatim)}
-                          className="chip"
-                        >
-                          {dish}
-                        </button>
-                      ))}
-                    </div>
+            {!msg.isUser && (
+              <div className="bot-avatar-mini">
+                <Image
+                  src="/foodie-avatar.png"
+                  alt={t.chat.botName}
+                  width={28}
+                  height={28}
+                  style={{ borderRadius: '50%', objectFit: 'cover' }}
+                />
+              </div>
+            )}
+            <div className="row-body">
+              <div className="bubble-line">
+                <div className={`bubble-wrap ${msg.liked ? 'liked' : ''}`}>
+                  <div className={`bubble ${msg.isUser ? 'user' : 'ai'}`}>
+                    {msg.replyTo && (
+                      <div className="quote">
+                        <span className="quote-label">{t.chat.botName}</span>
+                        <span className="quote-text">{msg.replyTo.text}</span>
+                      </div>
+                    )}
+                    <p className="text">{msg.message}</p>
+                    {!msg.isUser && msg.suggestedDishes && msg.suggestedDishes.length > 0 && (
+                      <div className="chips">
+                        {msg.suggestedDishes.map((dish) => (
+                          <button
+                            key={dish}
+                            onClick={() => handleChip(dish, msg.chipsVerbatim)}
+                            className="chip"
+                          >
+                            {dish}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {msg.liked && (
+                    <span className="react-badge" aria-hidden="true">
+                      <Heart size={13} fill="currentColor" />
+                    </span>
                   )}
                 </div>
-                {msg.liked && (
-                  <span className="react-badge" aria-hidden="true">
-                    <Heart size={13} fill="currentColor" />
-                  </span>
+                {!msg.isUser && (
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className={`action ${msg.liked ? 'liked' : ''}`}
+                      aria-label={msg.liked ? t.chat.unlike : t.chat.like}
+                      aria-pressed={msg.liked ?? false}
+                      title={msg.liked ? t.chat.unlike : t.chat.like}
+                      onClick={() => toggleLike(msg.id)}
+                    >
+                      <Heart size={16} fill={msg.liked ? 'currentColor' : 'none'} />
+                    </button>
+                    <button
+                      type="button"
+                      className="action"
+                      aria-label={t.chat.reply}
+                      title={t.chat.reply}
+                      onClick={() => startReply(msg)}
+                    >
+                      <Reply size={18} />
+                    </button>
+                  </div>
                 )}
               </div>
-              {!msg.isUser && (
-                <div className="actions">
-                  <button
-                    type="button"
-                    className={`action ${msg.liked ? 'liked' : ''}`}
-                    aria-label={msg.liked ? t.chat.unlike : t.chat.like}
-                    aria-pressed={msg.liked ?? false}
-                    title={msg.liked ? t.chat.unlike : t.chat.like}
-                    onClick={() => toggleLike(msg.id)}
-                  >
-                    <Heart size={16} fill={msg.liked ? 'currentColor' : 'none'} />
-                  </button>
-                  <button
-                    type="button"
-                    className="action"
-                    aria-label={t.chat.reply}
-                    title={t.chat.reply}
-                    onClick={() => startReply(msg)}
-                  >
-                    <Reply size={18} />
-                  </button>
-                </div>
-              )}
+              <span className="time">{msg.time}</span>
             </div>
-            <span className="time">{msg.time}</span>
           </div>
         ))}
 
         {isLoading && (
-          <div className="row ai">
-            <div className="bubble ai typing">
-              <span className="dot" />
-              <span className="dot" />
-              <span className="dot" />
+          <div className="row ai row--typing">
+            <div className="bot-avatar-mini">
+              <Image
+                src="/foodie-avatar.png"
+                alt={t.chat.botName}
+                width={28}
+                height={28}
+                style={{ borderRadius: '50%', objectFit: 'cover' }}
+              />
+            </div>
+            <div className="row-body">
+              <div className="bubble ai typing">
+                <span className="dot" />
+                <span className="dot" />
+                <span className="dot" />
+              </div>
             </div>
           </div>
         )}
@@ -390,13 +422,39 @@ export default function ChatView({
           max-width: 88%;
           animation: bubbleIn 0.4s var(--ease-out) both;
         }
+        .row-body {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+        }
         .row.user {
           align-self: flex-end;
           align-items: flex-end;
         }
+        .row.user .row-body {
+          align-items: flex-end;
+        }
         .row.ai {
           align-self: flex-start;
+          flex-direction: row;
+          align-items: flex-end;
+          gap: 8px;
+        }
+        .row.ai .row-body {
           align-items: flex-start;
+        }
+        .bot-avatar-mini {
+          flex-shrink: 0;
+          width: 28px;
+          height: 28px;
+          border-radius: var(--r-full);
+          overflow: hidden;
+          box-shadow: var(--shadow-sm);
+          /* lift the avatar so its bottom lines up with the bubble's bottom edge */
+          margin-bottom: 22px;
+        }
+        .row--typing .bot-avatar-mini {
+          margin-bottom: 0;
         }
         .bubble {
           padding: 12px 16px;

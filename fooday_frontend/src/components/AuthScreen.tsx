@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabaseClient';
-import { Eye, EyeOff, Loader2, Sparkles, Mail, Lock, ArrowRight, User } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Mail, Lock, ArrowRight, User } from 'lucide-react';
 import { useTranslation } from '@/i18n/LanguageContext';
 
 type AuthMode = 'signIn' | 'signUp' | 'forgotPassword';
@@ -87,7 +88,14 @@ export default function AuthScreen() {
         {/* Header */}
         <div className="auth-header" style={{ animationDelay: '0ms' }}>
           <div className="logo-icon">
-            <Sparkles size={24} color="var(--primary-contrast)" />
+            <Image
+              src="/fooday-mark.png"
+              alt="Fooday"
+              fill
+              sizes="(max-width: 480px) 44px, 52px"
+              style={{ borderRadius: 'var(--r-lg)', objectFit: 'cover' }}
+              preload
+            />
           </div>
           <h1 className="logo-text">Fooday</h1>
           <p className="tagline">{t.auth.tagline}</p>
@@ -242,6 +250,7 @@ export default function AuthScreen() {
         }
         
         .logo-icon {
+          position: relative;
           width: clamp(44px, 12vw, 52px);
           height: clamp(44px, 12vw, 52px);
           border-radius: var(--r-lg);
@@ -249,6 +258,7 @@ export default function AuthScreen() {
           display: flex;
           align-items: center;
           justify-content: center;
+          overflow: hidden;
           box-shadow: var(--shadow-primary);
           margin-bottom: 8px;
         }

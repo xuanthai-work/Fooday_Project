@@ -10,6 +10,7 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-21-integrate-brand-logo-and-foodie-avatar.md](tasks/2026-10-21-integrate-brand-logo-and-foodie-avatar.md) | Integrate Fooday Brand Logo and Foodie AI Mascot Avatar | 2026-10-21 | ✅ PASS |
 | [2026-10-20-multi-photo-carousel-and-photo-management.md](tasks/2026-10-20-multi-photo-carousel-and-photo-management.md) | Multi-Photo Carousel (Google Maps Style) and Photo Management (Add/Delete) | 2026-10-20 | ✅ PASS |
 | [2026-10-20-gitignore-assets-and-remove-paste-url.md](tasks/2026-10-20-gitignore-assets-and-remove-paste-url.md) | Gitignore Assets and Completely Remove Paste Image URL Feature | 2026-10-20 | ✅ PASS |
 | [2026-10-20-streamline-image-picker-ui-modals.md](tasks/2026-10-20-streamline-image-picker-ui-modals.md) | Streamline Image Picker UI in EditDishModal and AddDishModal | 2026-10-20 | ✅ PASS |
