@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from './useAuth';
 import { useTranslation } from '@/i18n/LanguageContext';
+import { refreshReviewStats } from './useReviewStats';
+import { refreshFoods } from './useFoods';
 
 export interface Review {
   id: number;
@@ -12,10 +14,33 @@ export interface Review {
   user_name: string;
   rating: number;
   comment: string;
+  image_url: string | null;
   created_at: string;
 }
 
-const COLUMNS = 'id, food_id, user_id, user_name, rating, comment, created_at';
+export type ReviewPostResult = 'ok' | 'empty' | 'cooldown' | 'failed';
+
+const COLUMNS = 'id, food_id, user_id, user_name, rating, comment, image_url, created_at';
+const COLUMNS_BASE = 'id, food_id, user_id, user_name, rating, comment, created_at';
+
+export function addMonths(date: Date, months: number): Date {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+/** When the current account may review this place again, or null if they can now. */
+export function cooldownUntil(reviews: Review[], userId: string | null, extraAt?: string | null): Date | null {
+  if (!userId) return null;
+  const stamps = reviews
+    .filter((review) => review.user_id === userId && review.id > 0)
+    .map((review) => review.created_at);
+  if (extraAt) stamps.push(extraAt);
+  if (stamps.length === 0) return null;
+  const latest = stamps.reduce((a, b) => (a > b ? a : b));
+  const until = addMonths(new Date(latest), 3);
+  return until.getTime() > Date.now() ? until : null;
+}
 
 /**
  * Reviews for a single dish: fetch + Realtime sync + optimistic posting.
@@ -27,18 +52,34 @@ export function useReviews(foodId: number) {
   const { t } = useTranslation();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [limitAt, setLimitAt] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     const load = async () => {
-      const { data, error } = await supabase
+      const full = await supabase
         .from('reviews')
         .select(COLUMNS)
         .eq('food_id', foodId)
         .order('created_at', { ascending: false });
+      const result = full.error
+        ? await supabase
+            .from('reviews')
+            .select(COLUMNS_BASE)
+            .eq('food_id', foodId)
+            .order('created_at', { ascending: false })
+        : full;
       if (!active) return;
-      if (!error) setReviews((data ?? []) as Review[]);
+      if (!result.error) {
+        const rows = (result.data ?? []) as Array<Partial<Review> & Record<string, unknown>>;
+        setReviews(
+          rows.map((row) => ({
+            ...(row as Review),
+            image_url: typeof row.image_url === 'string' ? row.image_url : null,
+          })),
+        );
+      }
       setLoading(false);
     };
 
@@ -63,10 +104,31 @@ export function useReviews(foodId: number) {
     };
   }, [foodId]);
 
+  useEffect(() => {
+    const id = user?.id;
+    if (!id) return;
+    let active = true;
+    supabase
+      .from('review_limits')
+      .select('reviewed_at')
+      .eq('food_id', foodId)
+      .eq('user_id', id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setLimitAt(data?.reviewed_at ?? null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [foodId, user?.id, reviews.length]);
+
+  const blockedUntil = cooldownUntil(reviews, user?.id ?? null, limitAt);
+
   const addReview = useCallback(
-    async (rating: number, comment: string) => {
+    async (rating: number, comment: string, imageUrl?: string | null): Promise<ReviewPostResult> => {
       const text = comment.trim();
-      if (!text) return;
+      if (!text) return 'empty';
+      if (cooldownUntil(reviews, user?.id ?? null, limitAt)) return 'cooldown';
 
       const userName = user?.email ? user.email.split('@')[0] : t.reviews.guestName;
       const tempId = -Date.now();
@@ -77,34 +139,58 @@ export function useReviews(foodId: number) {
         user_name: userName,
         rating,
         comment: text,
+        image_url: imageUrl || null,
         created_at: new Date().toISOString(),
       };
 
       // optimistic update; Realtime reconciles afterwards
       setReviews((prev) => [optimistic, ...prev]);
 
-      const { data, error } = await supabase
-        .from('reviews')
-        .insert({ food_id: foodId, user_name: userName, rating, comment: text })
-        .select(COLUMNS)
-        .single();
+      const payload: Record<string, unknown> = {
+        food_id: foodId,
+        user_name: userName,
+        rating,
+        comment: text,
+      };
+      if (imageUrl) payload.image_url = imageUrl;
 
-      if (error) {
-        // roll back the optimistic entry on failure
-        setReviews((prev) => prev.filter((r) => r.id !== tempId));
-        return;
+      let inserted = await supabase.from('reviews').insert(payload).select(COLUMNS).single();
+      if (
+        inserted.error &&
+        !imageUrl &&
+        !inserted.error.message.includes('review_cooldown') &&
+        /image_url/i.test(inserted.error.message)
+      ) {
+        // Database has not been migrated yet; post the text review without the photo column.
+        inserted = await supabase.from('reviews').insert(payload).select(COLUMNS_BASE).single();
       }
 
-      setReviews((prev) =>
-        prev.map((r) => (r.id === tempId ? ((data as Review) ?? r) : r)),
-      );
+      if (inserted.error || !inserted.data) {
+        setReviews((prev) => prev.filter((r) => r.id !== tempId));
+        if (inserted.error?.message.includes('review_cooldown')) return 'cooldown';
+        return 'failed';
+      }
+
+      const row = inserted.data as Review;
+      const saved: Review = {
+        ...row,
+        image_url: row.image_url ?? imageUrl ?? null,
+      };
+      setReviews((prev) => prev.map((r) => (r.id === tempId ? saved : r)));
+      setLimitAt(saved.created_at);
+      void refreshReviewStats();
+      // The database trigger rewrites foods.rating, so pull the new catalog value.
+      void refreshFoods();
+      return 'ok';
     },
-    [foodId, user, t],
+    [foodId, user, t, reviews, limitAt],
   );
 
   const deleteReview = useCallback(async (id: number) => {
     setReviews((prev) => prev.filter((r) => r.id !== id));
     await supabase.from('reviews').delete().eq('id', id);
+    void refreshReviewStats();
+    void refreshFoods();
   }, []);
 
   const totalCount = reviews.length;
@@ -112,5 +198,5 @@ export function useReviews(foodId: number) {
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / totalCount
     : 0;
 
-  return { reviews, loading, addReview, deleteReview, totalCount, averageRating };
+  return { reviews, loading, addReview, deleteReview, totalCount, averageRating, blockedUntil };
 }

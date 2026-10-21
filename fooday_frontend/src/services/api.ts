@@ -2,12 +2,16 @@ export interface ChatRequest {
   user_message: string;
   user_id?: string;
   favorites?: string[];
+  language?: string;
 }
+
+export type ChatFallback = 'error' | 'unconfigured' | 'empty';
 
 export interface ChatResponse {
   reply: string;
   action: string | null;
   suggested_dishes: string[];
+  fallback?: ChatFallback | null;
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:2001/api/v1';
@@ -17,6 +21,7 @@ export const chatService = {
     message: string,
     favorites: string[] = [],
     userId: string = 'nextjs_user',
+    language?: string,
   ): Promise<ChatResponse | null> {
     try {
       const response = await fetch(`${API_BASE_URL}/chat`, {
@@ -28,6 +33,7 @@ export const chatService = {
           user_message: message,
           user_id: userId,
           favorites,
+          language,
         } as ChatRequest),
       });
 

@@ -3,7 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, Pencil } from 'lucide-react';
+import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus, Pencil } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 import type { Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useAuth } from '@/hooks/useAuth';
@@ -22,11 +23,11 @@ export default function DishDetailModal({
   onClose,
   onNavigateToChat,
 }: DishDetailModalProps) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const { user } = useAuth();
   const { favorites, toggleFavorite } = useFavorites();
   const [currentDish, setCurrentDish] = useState<Food>(dish);
-  const { reviews, loading: reviewsLoading, addReview, deleteReview, totalCount, averageRating } =
+  const { reviews, loading: reviewsLoading, addReview, deleteReview, totalCount, averageRating, blockedUntil } =
     useReviews(currentDish.id);
 
   const [copied, setCopied] = useState(false);
@@ -36,7 +37,11 @@ export default function DishDetailModal({
   const [loginHint, setLoginHint] = useState(false);
   const [draftRating, setDraftRating] = useState(5);
   const [comment, setComment] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [activeImgIndex, setActiveImgIndex] = useState(0);
   const closingRef = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -52,7 +57,8 @@ export default function DishDetailModal({
   }, []);
 
   const isFav = favorites.has(currentDish.id);
-  const rating = Number(currentDish.rating ?? 0);
+  const seededRating = Number(currentDish.rating ?? 0);
+  const rating = totalCount > 0 ? averageRating : seededRating;
   const images: string[] =
     currentDish.images && currentDish.images.length > 0
       ? currentDish.images
@@ -68,6 +74,13 @@ export default function DishDetailModal({
     currentDish.address || currentDish.restaurant,
   )}`;
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'G';
+
+  const formatCooldownDate = (date: Date) =>
+    date.toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
 
   // Play the exit animation, then let the parent unmount us.
   const handleClose = useCallback(() => {
@@ -119,6 +132,26 @@ export default function DishDetailModal({
     handleClose();
   };
 
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !user) return;
+    setUploading(true);
+    setFormError(null);
+    try {
+      const safe = file.name.replace(/[^a-zA-Z0-9.]+/g, '-');
+      const path = `${user.id}/${Date.now()}-${safe}`;
+      const { error } = await supabase.storage.from('review-images').upload(path, file);
+      if (error) throw error;
+      const { data } = supabase.storage.from('review-images').getPublicUrl(path);
+      setPhotoUrl(data.publicUrl);
+    } catch {
+      setFormError(t.reviews.uploadFailed);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleEdit = () => {
     if (isGuest) {
       setLoginHint(true);
@@ -129,11 +162,19 @@ export default function DishDetailModal({
 
   const handlePost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!comment.trim() || posting) return;
+    if (!comment.trim() || posting || uploading || blockedUntil) return;
     setPosting(true);
-    await addReview(draftRating, comment);
-    setComment('');
-    setDraftRating(5);
+    setFormError(null);
+    const result = await addReview(draftRating, comment, photoUrl);
+    if (result === 'ok') {
+      setComment('');
+      setDraftRating(5);
+      setPhotoUrl(null);
+    } else if (result === 'cooldown') {
+      setFormError(t.reviews.cooldown(formatCooldownDate(blockedUntil ?? new Date())));
+    } else if (result !== 'empty') {
+      setFormError(t.reviews.postFailed);
+    }
     setPosting(false);
   };
 
@@ -363,48 +404,92 @@ export default function DishDetailModal({
               </div>
             )}
 
-            <form className="composer" onSubmit={handlePost}>
-              <div className="avatar" aria-hidden="true">
-                {userInitial}
-              </div>
-              <div className="composer-main">
-                <span className="composer-label">{t.reviews.ratingLabel}</span>
-                <div className="star-picker">
-                  {[1, 2, 3, 4, 5].map((n) => (
+            {blockedUntil ? (
+              <p className="cooldown-note">
+                {t.reviews.cooldown(
+                  formatCooldownDate(blockedUntil),
+                )}
+              </p>
+            ) : (
+              <form className="composer" onSubmit={handlePost}>
+                <div className="avatar" aria-hidden="true">
+                  {userInitial}
+                </div>
+                <div className="composer-main">
+                  <span className="composer-label">{t.reviews.ratingLabel}</span>
+                  <div className="star-picker">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        type="button"
+                        key={n}
+                        className="star-btn"
+                        onClick={() => setDraftRating(n)}
+                        aria-label={`${n}`}
+                        aria-pressed={n === draftRating}
+                      >
+                        <Star
+                          size={22}
+                          fill={n <= draftRating ? 'var(--star)' : 'none'}
+                          color={n <= draftRating ? 'var(--star)' : 'var(--text-faint)'}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    className="composer-input"
+                    rows={3}
+                    placeholder={t.reviews.placeholder}
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                  />
+                  {photoUrl && (
+                    <div className="photo-preview">
+                      <Image
+                        src={photoUrl}
+                        alt=""
+                        width={88}
+                        height={88}
+                        className="photo-preview-img"
+                      />
+                      <button
+                        type="button"
+                        className="photo-remove"
+                        onClick={() => setPhotoUrl(null)}
+                        aria-label={t.reviews.removePhoto}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+                  {formError && <p className="form-error">{formError}</p>}
+                  <div className="composer-actions">
                     <button
                       type="button"
-                      key={n}
-                      className="star-btn"
-                      onClick={() => setDraftRating(n)}
-                      aria-label={`${n}`}
-                      aria-pressed={n === draftRating}
+                      className="photo-btn"
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploading || posting}
                     >
-                      <Star
-                        size={22}
-                        fill={n <= draftRating ? 'var(--star)' : 'none'}
-                        color={n <= draftRating ? 'var(--star)' : 'var(--text-faint)'}
-                      />
+                      <ImagePlus size={16} />
+                      {uploading ? t.reviews.photoUploading : t.reviews.addPhoto}
                     </button>
-                  ))}
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={handlePhoto}
+                    />
+                    <button
+                      type="submit"
+                      className="post-btn"
+                      disabled={posting || uploading || !comment.trim()}
+                    >
+                      {posting ? t.reviews.posting : t.reviews.post}
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  className="composer-input"
-                  rows={3}
-                  placeholder={t.reviews.placeholder}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                />
-                <div className="composer-actions">
-                  <button
-                    type="submit"
-                    className="post-btn"
-                    disabled={posting || !comment.trim()}
-                  >
-                    {posting ? t.reviews.posting : t.reviews.post}
-                  </button>
-                </div>
-              </div>
-            </form>
+              </form>
+            )}
 
             {reviewsLoading ? (
               <div className="reviews-loading">{t.reviews.posting}</div>
@@ -427,6 +512,22 @@ export default function DishDetailModal({
                       </div>
                       {stars(r.rating, 13)}
                       <p className="review-text">{r.comment}</p>
+                      {r.image_url && (
+                        <a
+                          className="review-photo"
+                          href={r.image_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Image
+                            src={r.image_url}
+                            alt=""
+                            width={220}
+                            height={160}
+                            className="review-photo-img"
+                          />
+                        </a>
+                      )}
                     </div>
                     {user && r.user_id === user.id && (
                       <button
@@ -937,7 +1038,73 @@ export default function DishDetailModal({
         }
         .composer-actions {
           display: flex;
-          justify-content: flex-end;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .photo-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 40px;
+          padding: 0 12px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border-strong);
+          background: var(--surface);
+          color: var(--text);
+          font-size: 0.8125rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .photo-btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .photo-preview {
+          position: relative;
+          width: 88px;
+          height: 88px;
+          border-radius: var(--r-sm);
+          overflow: hidden;
+          border: 1px solid var(--border);
+        }
+        .photo-remove {
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          width: 24px;
+          height: 24px;
+          border: none;
+          border-radius: var(--r-full);
+          background: rgba(20, 14, 10, 0.72);
+          color: #fff;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+        }
+        .form-error,
+        .cooldown-note {
+          margin: 12px 0 0;
+          font-size: 0.8125rem;
+          line-height: 1.45;
+          color: var(--text-soft);
+        }
+        .cooldown-note {
+          padding: 12px 14px;
+          border-radius: var(--r-md);
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+        }
+        .form-error {
+          color: var(--heart);
+        }
+        .review-photo {
+          display: block;
+          width: min(100%, 220px);
+          margin-top: 8px;
+          border-radius: var(--r-sm);
+          overflow: hidden;
+          border: 1px solid var(--border);
         }
         .post-btn {
           height: 40px;

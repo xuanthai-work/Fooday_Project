@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Dices, Star, Heart, Sparkles, RotateCw, Eye, Loader2 } from 'lucide-react';
 import { useFoods, CATEGORY_FILTERS, CategoryFilter, Food } from '@/hooks/useFoods';
+import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useTranslation } from '@/i18n/LanguageContext';
 import DishDetailModal from './DishDetailModal';
@@ -26,18 +27,70 @@ function buildReel(pool: Food[], size = REEL_SIZE): Food[] {
   return out;
 }
 
-function rarityOf(food: Food): Rarity {
-  if (food.rating >= 4.6) return 'gold';
-  if (food.rating >= 4.3) return 'pink';
-  if (food.rating >= 4.0) return 'purple';
+function rarityOf(rating: number): Rarity {
+  if (rating >= 4.6) return 'gold';
+  if (rating >= 4.3) return 'pink';
+  if (rating >= 4.0) return 'purple';
   return 'blue';
+}
+
+type PriceTier = 'all' | 'under30' | '30' | '50' | '199' | '299';
+
+const PRICE_TIERS: { id: PriceTier; labelKey: 'priceAll' | 'priceUnder30' | 'price30' | 'price50' | 'price199' | 'price299' }[] = [
+  { id: 'all', labelKey: 'priceAll' },
+  { id: 'under30', labelKey: 'priceUnder30' },
+  { id: '30', labelKey: 'price30' },
+  { id: '50', labelKey: 'price50' },
+  { id: '199', labelKey: 'price199' },
+  { id: '299', labelKey: 'price299' },
+];
+
+const normalize = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+
+/** Catalog has no price column, so the case filter uses a type-based estimate. */
+function estimatePrice(food: Food): number {
+  const text = normalize(`${food.name} ${food.restaurant} ${food.review_note ?? ''} ${food.tag ?? ''}`);
+  const noted = text.match(/(\d{2,3})\s*(k|nghin|ngan|\/ng)\b/);
+  if (noted) {
+    const amount = Number(noted[1]) * 1000;
+    if (amount >= 15000 && amount <= 900000) return amount;
+  }
+  if (/buffet|lau|nuong|bbq|hai san|king bbq|dookki|shogun|manyo|k-pub|k pub/.test(text)) return 249000;
+  if (/kfc|lotteria|mcdonald|burger|popeyes|jollibee|pizza|bon chon|don chicken/.test(text)) return 89000;
+  if (/banh mi|xien|che |xoi|banh duc|tra sua|cafe|ca phe|coffee|snack/.test(text)) return 40000;
+  if (/pho|bun |com |chao|mi |my |hu tieu|banh cuon/.test(text)) return 65000;
+  return 70000;
+}
+
+function formatPrice(price: number): string {
+  if (price >= 1000) {
+    const k = price / 1000;
+    return `${k % 1 === 0 ? k : k.toFixed(0)}k`;
+  }
+  return `${price}`;
+}
+
+function inPriceTier(price: number, tier: PriceTier): boolean {
+  if (tier === 'all') return true;
+  if (tier === 'under30') return price < 30000;
+  if (tier === '30') return price >= 30000 && price <= 50000;
+  if (tier === '50') return price > 50000 && price <= 199000;
+  if (tier === '199') return price > 199000 && price <= 299000;
+  return price > 299000;
 }
 
 export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const { t } = useTranslation();
   const { foods } = useFoods();
+  const { ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
   const [category, setCategory] = useState<CategoryFilter>('All');
+  const [priceTier, setPriceTier] = useState<PriceTier>('all');
   const [reel, setReel] = useState<Food[]>([]);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<Food | null>(null);
@@ -51,8 +104,13 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const audioRef = useRef<AudioContext | null>(null);
 
   const pool = useMemo(
-    () => foods.filter((f) => category === 'All' || f.category === category),
-    [foods, category],
+    () =>
+      foods.filter(
+        (f) =>
+          (category === 'All' || f.category === category) &&
+          inPriceTier(estimatePrice(f), priceTier),
+      ),
+    [foods, category, priceTier],
   );
 
   const initialReel = useMemo(() => buildReel(pool), [pool]);
@@ -131,14 +189,24 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     }, 50 + SPIN_MS);
   };
 
-  const selectCategory = (c: CategoryFilter) => {
-    if (spinning) return;
-    setCategory(c);
+  const resetSpin = () => {
     setResult(null);
     setSelectedDish(null);
     setReel([]);
     setOffset(0);
     setIsTransitioning(false);
+  };
+
+  const selectCategory = (c: CategoryFilter) => {
+    if (spinning) return;
+    setCategory(c);
+    resetSpin();
+  };
+
+  const selectPrice = (tier: PriceTier) => {
+    if (spinning) return;
+    setPriceTier(tier);
+    resetSpin();
   };
 
   const isFav = result ? favorites.has(result.id) : false;
@@ -165,6 +233,23 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         ))}
       </div>
 
+      <div className="price-block">
+        <span className="price-label">{t.random.priceLabel}</span>
+        <div className="rnd-chips price-chips" role="tablist" aria-label={t.random.priceLabel}>
+          {PRICE_TIERS.map((tier) => (
+            <button
+              key={tier.id}
+              className={`chip price-chip ${priceTier === tier.id ? 'active' : ''}`}
+              onClick={() => selectPrice(tier.id)}
+              disabled={spinning}
+              aria-pressed={priceTier === tier.id}
+            >
+              {t.random[tier.labelKey]}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="roulette-box" ref={containerRef} aria-live="polite">
         {track.length > 0 ? (
           <div
@@ -177,7 +262,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             }}
           >
             {track.map((item, i) => (
-              <div key={`${item.id}-${i}`} className={`roulette-card r-${rarityOf(item)}`}>
+              <div key={`${item.id}-${i}`} className={`roulette-card r-${rarityOf(ratingOf(item.id, item.rating))}`}>
                 <div className="rc-media">
                   <Image
                     src={item.image_url}
@@ -189,6 +274,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                     style={{ objectFit: 'cover' }}
                   />
                   <span className="rc-cat">{t.home.categories[item.category]}</span>
+                  <span className="rc-price">{formatPrice(estimatePrice(item))}</span>
                 </div>
                 <div className="rc-body">
                   <p className="rc-name">{item.name}</p>
@@ -224,8 +310,9 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
               <p className="winner-place">{result.restaurant}</p>
               <span className="winner-rating">
                 <Star size={14} fill="var(--star)" color="var(--star)" />
-                {result.rating.toFixed(1)}
+                {ratingOf(result.id, result.rating).toFixed(1)}
               </span>
+              <span className="winner-price">{formatPrice(estimatePrice(result))}</span>
             </div>
           </div>
 
@@ -309,11 +396,44 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           margin-top: 2px;
         }
         .rnd-chips {
+          position: relative;
+          z-index: 2;
           display: flex;
           gap: 9px;
           flex-wrap: wrap;
           justify-content: center;
           margin-bottom: 22px;
+          background: var(--bg);
+        }
+        .price-block {
+          position: relative;
+          z-index: 2;
+          margin: -8px 0 18px;
+          background: var(--bg);
+        }
+        .price-label {
+          display: block;
+          margin-bottom: 8px;
+          text-align: center;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          color: var(--text-faint);
+        }
+        .price-chips {
+          margin-bottom: 0;
+          flex-wrap: nowrap;
+          justify-content: flex-start;
+          overflow-x: auto;
+          padding-bottom: 2px;
+          scrollbar-width: none;
+        }
+        .price-chips::-webkit-scrollbar {
+          display: none;
+        }
+        .price-chip {
+          flex: 0 0 auto;
         }
         .chip {
           padding: 9px 18px;
@@ -347,6 +467,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           position: relative;
           width: 100%;
           overflow: hidden;
+          isolation: isolate;
           padding-block: 18px;
           border-radius: var(--r-lg);
           border: 1px solid rgba(234, 179, 8, 0.35);
@@ -399,6 +520,19 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           font-weight: 700;
           letter-spacing: 0.02em;
           backdrop-filter: blur(4px);
+        }
+        .rc-price {
+          position: absolute;
+          top: 7px;
+          right: 7px;
+          padding: 3px 8px;
+          border-radius: var(--r-full);
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+          box-shadow: var(--shadow-primary);
         }
         .rc-body {
           padding: 8px 10px 10px;
@@ -454,8 +588,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         }
         .center-ticker {
           position: absolute;
-          top: 0;
-          bottom: 0;
+          top: 10px;
+          bottom: 10px;
           left: 50%;
           width: 2px;
           margin-left: -1px;
@@ -482,13 +616,13 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           border-right: 8px solid transparent;
         }
         .center-ticker::before {
-          top: -1px;
-          border-top: 12px solid #fbbf24;
+          top: 0;
+          border-top: 10px solid #fbbf24;
           filter: drop-shadow(0 2px 4px rgba(251, 191, 36, 0.6));
         }
         .center-ticker::after {
-          bottom: -1px;
-          border-bottom: 12px solid #fbbf24;
+          bottom: 0;
+          border-bottom: 10px solid #fbbf24;
           filter: drop-shadow(0 -2px 4px rgba(251, 191, 36, 0.6));
         }
         .roulette-empty {
@@ -588,6 +722,17 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           font-weight: 700;
           color: var(--text);
           margin-top: 8px;
+        }
+        .winner-price {
+          display: inline-block;
+          margin-top: 6px;
+          padding: 2px 10px;
+          border-radius: var(--r-full);
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          font-size: 12px;
+          font-weight: 800;
+          box-shadow: var(--shadow-primary);
         }
         .rnd-actions {
           display: flex;
