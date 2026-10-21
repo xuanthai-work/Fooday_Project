@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   Mail,
@@ -11,11 +11,15 @@ import {
   Clock,
   LogOut,
   Globe,
-  Settings,
+  Check,
+  Camera,
+  Loader2,
 } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
+import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import ThemeToggle from './ThemeToggle';
+import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { LANGUAGES } from '@/i18n/translations';
@@ -27,11 +31,34 @@ interface ProfileViewProps {
 
 export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const { foods, byId } = useFoods();
+  const { ratingOf } = useReviewStats();
   const { favorites } = useFavorites();
-  const { user, signOut } = useAuth();
+  const { user, signOut, updateProfile } = useAuth();
   const { t, lang, setLang } = useTranslation();
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
+  const [langOpen, setLangOpen] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const langAnchorRef = useRef<HTMLDivElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const currentLang = LANGUAGES.find((item) => item.code === lang) ?? LANGUAGES[0];
+
+  useEffect(() => {
+    if (!langOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!langAnchorRef.current?.contains(event.target as Node)) setLangOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLangOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [langOpen]);
 
   const favoriteItems = [...favorites]
     .map((id) => byId[id])
@@ -51,6 +78,42 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
     await signOut();
   };
 
+  const avatarUrl =
+    (user?.user_metadata?.avatar_url as string | undefined)?.trim() || '';
+
+  const handleAvatarClick = () => {
+    if (isGuest) {
+      setAvatarError(t.profile.avatarGuestHint);
+      setTimeout(() => setAvatarError(null), 2600);
+      return;
+    }
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !user) return;
+    setAvatarUploading(true);
+    setAvatarError(null);
+    try {
+      const safe = file.name.replace(/[^a-zA-Z0-9.]+/g, '-');
+      const path = `${user.id}/${Date.now()}-${safe}`;
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, {
+        upsert: true,
+      });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      const url = `${data.publicUrl}?v=${Date.now()}`;
+      const ok = await updateProfile({ avatar_url: url });
+      if (!ok) setAvatarError(t.profile.avatarFailed);
+    } catch {
+      setAvatarError(t.profile.avatarFailed);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   return (
     <div className="profile animate-fade-in">
       <div className="profile-aside">
@@ -60,13 +123,86 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           <button className="banner-btn" aria-label={t.profile.signOut} onClick={signOut}>
             <LogOut size={19} />
           </button>
-          <ThemeToggle variant="onPrimary" />
+          <div className="banner-actions" ref={langAnchorRef}>
+            <button
+              type="button"
+              className={`lang-trigger ${langOpen ? 'open' : ''}`}
+              aria-label={`${t.profile.languageLabel}: ${currentLang.label}`}
+              aria-haspopup="dialog"
+              aria-expanded={langOpen}
+              title={t.profile.languageLabel}
+              onClick={() => setLangOpen((open) => !open)}
+            >
+              <Globe size={19} />
+            </button>
+            <ThemeToggle variant="onPrimary" />
+            {langOpen && (
+              <div className="lang-pop" role="dialog" aria-label={t.profile.languageLabel}>
+                <p className="lang-pop-title">{t.profile.languageLabel}</p>
+                <div className="lang-options" role="group" aria-label={t.profile.languageLabel}>
+                  {LANGUAGES.map(({ code, label, flag }) => {
+                    const active = lang === code;
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        className={`lang-option ${active ? 'active' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => {
+                          setLang(code);
+                          setLangOpen(false);
+                        }}
+                      >
+                        <span className="lang-flag" aria-hidden="true">
+                          {flag}
+                        </span>
+                        <span className="lang-option-label">{label}</span>
+                        {active && <Check size={16} strokeWidth={2.6} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="id-row">
-          <div className="avatar-ring">
-            <div className="avatar-placeholder">{initial}</div>
-          </div>
+          <button
+            type="button"
+            className="avatar-ring avatar-button"
+            onClick={handleAvatarClick}
+            aria-label={t.profile.changeAvatar}
+            title={isGuest ? t.profile.avatarGuestHint : t.profile.changeAvatar}
+            disabled={avatarUploading}
+          >
+            <span className="avatar-ring">
+              <span className="avatar-media">
+                {avatarUrl ? (
+                  <Image
+                    src={avatarUrl}
+                    alt={displayName}
+                    fill
+                    sizes="84px"
+                    className="avatar-image"
+                    style={{ objectFit: 'cover' }}
+                  />
+                ) : (
+                  <span className="avatar-placeholder">{initial}</span>
+                )}
+              </span>
+            </span>
+            <span className="avatar-overlay" aria-hidden="true">
+              {avatarUploading ? <Loader2 size={18} className="spin" /> : <Camera size={18} />}
+            </span>
+          </button>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleAvatarFile}
+          />
           <div className="id-text">
             <h2 className="name">{isGuest ? t.profile.guestUser : displayName}</h2>
             <span className="detail">
@@ -82,6 +218,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                 {memberSince ? t.profile.memberSince(memberSince) : t.profile.foodayMember}
               </span>
             )}
+            {avatarError && <span className="avatar-error">{avatarError}</span>}
           </div>
         </div>
       </div>
@@ -154,7 +291,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                     <span className="fav-place">{item.name}</span>
                     <span className="fav-rating">
                       <Star size={12} fill="var(--star)" color="var(--star)" />
-                      {item.rating.toFixed(1)}
+                      {ratingOf(item.id, item.rating).toFixed(1)}
                     </span>
                   </div>
                   <ChevronRight size={20} className="chevron" />
@@ -181,39 +318,6 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
         )}
       </div>
 
-      {/* Settings & preferences */}
-      <div className="settings-card">
-        <div className="settings-head">
-          <Settings size={16} /> {t.profile.settingsTitle}
-        </div>
-        <div className="setting-row">
-          <span className="setting-label">
-            <Globe size={15} /> {t.profile.languageLabel}
-          </span>
-          <div className="lang-switch" role="group" aria-label={t.profile.languageLabel}>
-            {LANGUAGES.map(({ code, label, flag }) => (
-              <button
-                key={code}
-                type="button"
-                className={`lang-btn ${lang === code ? 'active' : ''}`}
-                aria-pressed={lang === code}
-                onClick={() => setLang(code)}
-              >
-                <span className="lang-flag" aria-hidden="true">
-                  {flag}
-                </span>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="setting-row">
-          <span className="setting-label">
-            <Settings size={15} /> {t.profile.appearanceLabel}
-          </span>
-          <ThemeToggle />
-        </div>
-      </div>
       </div>
 
       {selectedDish && (
@@ -259,7 +363,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           justify-content: space-between;
           margin-bottom: 18px;
           position: relative;
-          z-index: 1;
+          z-index: 5;
         }
         .banner-btn {
           width: 44px;
@@ -277,6 +381,93 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           background: rgba(255, 255, 255, 0.28);
           transform: rotate(45deg);
         }
+        .banner-actions {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          z-index: 3;
+        }
+        .lang-trigger {
+          width: 44px;
+          height: 44px;
+          border-radius: var(--r-full);
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          background: rgba(255, 255, 255, 0.16);
+          color: #fff;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .lang-trigger:hover,
+        .lang-trigger.open {
+          background: rgba(255, 255, 255, 0.26);
+          border-color: rgba(255, 255, 255, 0.5);
+          transform: translateY(-2px);
+        }
+        .lang-trigger:active {
+          transform: scale(0.94);
+        }
+        .lang-pop {
+          position: absolute;
+          top: calc(100% + 10px);
+          right: 0;
+          width: 220px;
+          padding: 12px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-md);
+          box-shadow: var(--shadow-lg);
+          color: var(--text);
+          animation: fadeInUp 0.22s var(--ease-out);
+        }
+        .lang-pop-title {
+          margin: 0 4px 8px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          color: var(--text-faint);
+        }
+        .lang-options {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .lang-option {
+          width: 100%;
+          min-height: 44px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 0 12px;
+          border: none;
+          border-radius: var(--r-sm);
+          background: var(--surface-2);
+          color: var(--text);
+          font-size: 0.875rem;
+          font-weight: 700;
+          cursor: pointer;
+          text-align: left;
+          transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+        }
+        .lang-option:hover:not(.active) {
+          color: var(--primary-strong);
+        }
+        .lang-option.active {
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          box-shadow: var(--shadow-primary);
+        }
+        .lang-option-label {
+          flex: 1;
+        }
+        .lang-flag {
+          font-size: 1.05rem;
+          line-height: 1;
+        }
         .id-row {
           display: flex;
           align-items: center;
@@ -285,13 +476,76 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           z-index: 1;
         }
         .avatar-ring {
-          width: clamp(72px, 20vw, 84px);
-          height: clamp(72px, 20vw, 84px);
+          position: relative;
+          display: block;
+          width: 100%;
+          height: 100%;
           border-radius: var(--r-full);
           padding: 3px;
           background: rgba(255, 255, 255, 0.9);
           flex-shrink: 0;
+          overflow: hidden;
+        }
+        .avatar-button {
+          position: relative;
+          width: clamp(72px, 20vw, 84px);
+          height: clamp(72px, 20vw, 84px);
+          border: none;
+          padding: 0;
+          border-radius: var(--r-full);
+          background: none;
+          cursor: pointer;
+          display: grid;
+          place-items: center;
+          flex-shrink: 0;
           box-shadow: 0 10px 26px rgba(40, 40, 90, 0.28);
+          transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .avatar-button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 14px 30px rgba(40, 40, 90, 0.34);
+        }
+        .avatar-button:disabled {
+          cursor: progress;
+        }
+        .avatar-media {
+          position: relative;
+          display: block;
+          width: 100%;
+          height: 100%;
+          border-radius: var(--r-full);
+          overflow: hidden;
+        }
+        .avatar-image {
+          border-radius: var(--r-full);
+        }
+        .avatar-overlay {
+          position: absolute;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          background: rgba(20, 14, 10, 0.5);
+          color: #fff;
+          opacity: 0;
+          transition: opacity var(--dur-fast) var(--ease);
+        }
+        .avatar-button:hover .avatar-overlay,
+        .avatar-button:focus-visible .avatar-overlay,
+        .avatar-button:disabled .avatar-overlay {
+          opacity: 1;
+        }
+        .spin {
+          animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        .avatar-error {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #ffd7cc;
         }
         .avatar-placeholder {
           width: 100%;
@@ -545,77 +799,6 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           line-height: 1.45;
         }
 
-        /* Settings & preferences */
-        .settings-card {
-          margin: 16px clamp(16px, 5vw, 20px) 0;
-          padding: 16px;
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: var(--r-lg);
-          box-shadow: var(--shadow-sm);
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-        }
-        .settings-head {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 0.9375rem;
-          font-weight: 700;
-          color: var(--text);
-        }
-        .setting-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-        .setting-label {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 0.875rem;
-          font-weight: 600;
-          color: var(--text-soft);
-        }
-        .lang-switch {
-          display: inline-flex;
-          padding: 4px;
-          gap: 4px;
-          background: var(--surface-2);
-          border: 1px solid var(--border);
-          border-radius: var(--r-full);
-        }
-        .lang-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          min-height: 36px;
-          padding: 0 14px;
-          border: none;
-          border-radius: var(--r-full);
-          background: none;
-          color: var(--text-soft);
-          font-size: 0.8125rem;
-          font-weight: 700;
-          cursor: pointer;
-          transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-        }
-        .lang-btn:hover:not(.active) {
-          color: var(--primary-strong);
-        }
-        .lang-btn.active {
-          background: var(--grad-primary);
-          color: var(--primary-contrast);
-          box-shadow: var(--shadow-primary);
-        }
-        .lang-flag {
-          font-size: 0.9375rem;
-          line-height: 1;
-        }
-
         /* Desktop: two-column dashboard that fills the content area */
         @media (min-width: 1024px) {
           div.profile {
@@ -657,9 +840,6 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           .panel {
             padding: 0;
             min-height: 360px;
-          }
-          .settings-card {
-            margin: 0;
           }
           .fav-list {
             display: grid;

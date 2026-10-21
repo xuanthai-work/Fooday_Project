@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { Search, Heart, Star, Bell, Sparkles } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
+import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useTranslation } from '@/i18n/LanguageContext';
 import ThemeToggle from './ThemeToggle';
@@ -97,6 +98,7 @@ function itemMatchesMood(item: Food, mood: MoodTaskOption): boolean {
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { t } = useTranslation();
   const { foods, loading } = useFoods();
+  const { ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
   const [selectedMood, setSelectedMood] = useState<MoodTaskCategory>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -247,7 +249,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                   <div className="card-foot">
                     <span className="rating">
                       <Star size={13} fill="var(--star)" color="var(--star)" />
-                      {item.rating.toFixed(1)}
+                      {ratingOf(item.id, item.rating).toFixed(1)}
                     </span>
                     <button
                       onClick={(e) => {

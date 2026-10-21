@@ -25,6 +25,25 @@ SYSTEM_INSTRUCTION = (
     "(it may be empty if nothing fits)."
 )
 
+# System fallbacks. The app default language is Vietnamese.
+FALLBACKS = {
+    "vi": {
+        "unconfigured": "Mình chưa được cấu hình trên máy chủ (thiếu khóa Gemini hoặc Supabase).",
+        "error": "Xin lỗi, mình chưa nghĩ ra gợi ý lúc này. Bạn thử lại sau một chút nhé.",
+        "empty": "Đây là vài gợi ý cho bạn!",
+    },
+    "en": {
+        "unconfigured": "The AI isn't configured on the server yet (missing GEMINI/Supabase keys).",
+        "error": "Sorry, I couldn't think of a recommendation just now. Please try again in a moment.",
+        "empty": "Here are a few ideas for you!",
+    },
+}
+
+
+def _lang(request: ChatRequest) -> str:
+    code = (request.language or "").strip().lower()
+    return code if code in FALLBACKS else "vi"
+
 
 def _format_catalog(foods: list[dict]) -> str:
     lines = []
@@ -39,11 +58,15 @@ def _format_catalog(foods: list[dict]) -> str:
 @router.post("/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest) -> ChatResponse:
     """Generate a recommendation grounded in the real Supabase foods catalog."""
+    lang = _lang(request)
+    copy = FALLBACKS[lang]
+
     if config.gemini is None or config.supabase is None:
         return ChatResponse(
-            reply="The AI isn't configured on the server yet (missing GEMINI/Supabase keys).",
+            reply=copy["unconfigured"],
             action=None,
             suggested_dishes=[],
+            fallback="unconfigured",
         )
 
     try:
@@ -78,17 +101,24 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
         )
 
         data = json.loads(resp.text)
-        reply = (data.get("reply") or "").strip() or "Here are a few ideas for you!"
+        raw_reply = (data.get("reply") or "").strip()
+        reply = raw_reply or copy["empty"]
         # validate suggestions against the catalog (no hallucinated dishes)
         dishes = [d for d in data.get("suggested_dishes", []) if d in valid_names][:4]
-        return ChatResponse(reply=reply, action=None, suggested_dishes=dishes)
+        return ChatResponse(
+            reply=reply,
+            action=None,
+            suggested_dishes=dishes,
+            fallback=None if raw_reply else "empty",
+        )
 
     except Exception as exc:  # noqa: BLE001 — degrade gracefully for the client
         print(f"[chat] error: {exc}")
         return ChatResponse(
-            reply="Sorry, I couldn't think of a recommendation just now. Please try again in a moment.",
+            reply=copy["error"],
             action=None,
             suggested_dishes=[],
+            fallback="error",
         )
 
 

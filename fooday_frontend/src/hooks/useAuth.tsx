@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -9,6 +9,8 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  /** Merge values into the user's auth metadata (e.g. the avatar URL). */
+  updateProfile: (data: Record<string, unknown>) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthState>({
@@ -16,6 +18,7 @@ const AuthContext = createContext<AuthState>({
   user: null,
   loading: true,
   signOut: async () => {},
+  updateProfile: async () => false,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -63,8 +66,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const updateProfile = useCallback(async (data: Record<string, unknown>) => {
+    const { data: result, error } = await supabase.auth.updateUser({ data });
+    if (error) {
+      console.error('Error updating profile:', error);
+      return false;
+    }
+    if (result.user) setUser(result.user);
+    return true;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ session, user, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user, loading, signOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );
