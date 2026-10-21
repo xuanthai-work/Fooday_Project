@@ -10,6 +10,11 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-21-fix-google-maps-pinned-coordinates-and-chat-padding.md](tasks/2026-10-21-fix-google-maps-pinned-coordinates-and-chat-padding.md) | Fix Google Maps Pinned Coordinates Prioritization & Eliminate Double Padding in ChatView | 2026-10-21 | ✅ PASS |
+| [2026-10-21-pull-down-to-dismiss-and-remove-close-buttons.md](tasks/2026-10-21-pull-down-to-dismiss-and-remove-close-buttons.md) | Remove [X] Buttons & Add Pull-Down to Dismiss Gesture in DishDetailModal | 2026-10-21 | ✅ PASS |
+| [2026-10-21-refine-dish-detail-modal-sheet-and-ux.md](tasks/2026-10-21-refine-dish-detail-modal-sheet-and-ux.md) | Refine DishDetailModal Sheet UX, Smooth Scrolling, and De-duplicate Content | 2026-10-21 | ✅ PASS |
+| [2026-10-21-google-maps-link-auto-address-parse.md](tasks/2026-10-21-google-maps-link-auto-address-parse.md) | Mandatory Google Maps Link & Auto Address Parsing in Dish Modals | 2026-10-21 | ✅ PASS |
+| [2026-10-21-remove-dummy-notification-bell-button.md](tasks/2026-10-21-remove-dummy-notification-bell-button.md) | Remove Dummy Notification Bell Button from Home Header | 2026-10-21 | ✅ PASS |
 | [2026-10-21-remove-hashtag-pills-from-home-cards.md](tasks/2026-10-21-remove-hashtag-pills-from-home-cards.md) | Remove Hashtag Pills from Home Food Card Media | 2026-10-21 | ✅ PASS |
 | [2026-10-21-multi-hashtag-slug-standardization.md](tasks/2026-10-21-multi-hashtag-slug-standardization.md) | Multi-Hashtag System with Lowercase Unaccented Format (#slug) | 2026-10-21 | ✅ PASS |
 | [2026-10-21-vietnamese-typography-and-trending-hashtags.md](tasks/2026-10-21-vietnamese-typography-and-trending-hashtags.md) | Upgrade Vietnamese Typography (Plus Jakarta Sans) & Social-Style Hashtag System | 2026-10-21 | ✅ PASS |

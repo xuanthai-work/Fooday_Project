@@ -19,3 +19,15 @@ class ChatResponse(BaseModel):
     # Set when reply is a system fallback so the client can localize it.
     # "error" | "unconfigured" | "empty"
     fallback: str | None = None
+
+
+class ParseMapResponse(BaseModel):
+    """Metadata extracted from a pasted Google Maps link.
+
+    Every field is optional: when a link cannot be resolved the endpoint still
+    answers with HTTP 200 and all-null fields so the client never crashes.
+    """
+
+    restaurant_name: str | None = None
+    address: str | None = None
+    resolved_url: str | None = None

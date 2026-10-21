@@ -6,9 +6,10 @@ import { X, Upload, Star, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { refreshFoods, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
-import { dishImageService, DishImage } from '@/services/api';
+import { dishImageService, mapService, DishImage } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, serializeHashtags } from '@/lib/hashtags';
+import { isGoogleMapsUrl } from '@/lib/maps';
 import DishNameAutocomplete from './DishNameAutocomplete';
 
 export { TRENDING_HASHTAGS };
@@ -30,6 +31,9 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<FoodCategory>('Foods');
   const [restaurant, setRestaurant] = useState('');
+  const [googleMapUrl, setGoogleMapUrl] = useState('');
+  const [address, setAddress] = useState('');
+  const [isResolvingMap, setIsResolvingMap] = useState(false);
   const [rating, setRating] = useState(5);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
@@ -69,6 +73,49 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     };
   }, [name]);
 
+  // Auto-resolve the pasted Google Maps link: the backend extracts the place
+  // name and the postal address, then we fill the address (and the restaurant
+  // name when it is still empty) automatically.
+  const resolveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolveSeqRef = useRef(0);
+
+  const handleGoogleMapUrlChange = (value: string) => {
+    setGoogleMapUrl(value);
+    resolveSeqRef.current += 1;
+    if (resolveTimerRef.current) {
+      clearTimeout(resolveTimerRef.current);
+      resolveTimerRef.current = null;
+    }
+
+    const url = value.trim();
+    if (!isGoogleMapsUrl(url)) {
+      setIsResolvingMap(false);
+      return;
+    }
+
+    setIsResolvingMap(true);
+    resolveTimerRef.current = setTimeout(async () => {
+      resolveTimerRef.current = null;
+      const seq = resolveSeqRef.current;
+      const info = await mapService.parseMapLink(url);
+      if (seq !== resolveSeqRef.current) return;
+      setIsResolvingMap(false);
+      if (!info) return;
+      if (info.address) setAddress(info.address);
+      if (info.restaurant_name) {
+        setRestaurant((prev) => (prev.trim() ? prev : (info.restaurant_name as string)));
+      }
+    }, 500);
+  };
+
+  // Drop a pending resolution when the modal unmounts.
+  useEffect(
+    () => () => {
+      if (resolveTimerRef.current) clearTimeout(resolveTimerRef.current);
+    },
+    [],
+  );
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
@@ -107,7 +154,12 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   };
 
   const canSubmit =
-    Boolean(name.trim() && restaurant.trim() && imageList.length > 0) && !busy;
+    Boolean(
+      name.trim() &&
+        restaurant.trim() &&
+        imageList.length > 0 &&
+        isGoogleMapsUrl(googleMapUrl),
+    ) && !busy;
 
   const handleAddTag = (raw: string) => {
     const normalized = normalizeSingleHashtag(raw);
@@ -147,6 +199,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       image_url: imageList[0] || '',
       images: imageList,
       tag: finalTag || null,
+      address: address.trim() || null,
+      google_map_url: googleMapUrl.trim(),
     });
     if (insErr) {
       setError(insErr.message);
@@ -281,7 +335,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           </div>
 
           {/* Restaurant */}
-          <label className="field">
+          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
             <span className="label">{t.addDish.restaurantLabel}</span>
             <input
               value={restaurant}
@@ -289,6 +343,47 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
               placeholder={t.addDish.restaurantPlaceholder}
               required
             />
+          </label>
+
+          {/* Google Maps link — required, auto-resolves the address */}
+          <label className="field">
+            <span className="label">
+              {t.map.googleMapLabel} <span className="required-mark">*</span>
+            </span>
+            <input
+              value={googleMapUrl}
+              onChange={(e) => handleGoogleMapUrlChange(e.target.value)}
+              placeholder={t.map.googleMapPlaceholder}
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              aria-label={t.map.googleMapLabel}
+            />
+            {googleMapUrl.trim() && !isGoogleMapsUrl(googleMapUrl) && (
+              <span className="field-hint error-hint">{t.map.googleMapRequired}</span>
+            )}
+          </label>
+
+          {/* Address — optional, auto-filled from the Google Maps link */}
+          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
+            <span className="label">{t.map.addressLabel}</span>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={
+                isResolvingMap ? t.map.resolvingAddress : t.map.addressPlaceholder
+              }
+              disabled={isResolvingMap}
+              aria-busy={isResolvingMap}
+              aria-label={t.map.addressLabel}
+            />
+            {isResolvingMap && (
+              <span className="field-hint resolving-hint">
+                <Loader2 size={13} className="spin" />
+                {t.map.resolvingAddress}
+              </span>
+            )}
           </label>
 
           {/* Rating */}
@@ -582,6 +677,22 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
         }
         .field input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+        .field.resolving input {
+          opacity: 0.5;
+          pointer-events: none;
+          cursor: progress;
+        }
+        .required-mark { color: var(--heart); }
+        .field-hint {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.3;
+        }
+        .resolving-hint { color: var(--primary-strong); }
+        .error-hint { color: var(--heart); }
         .chips { display: flex; gap: 8px; }
         .chip {
           flex: 1;

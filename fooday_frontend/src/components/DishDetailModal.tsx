@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus, Pencil } from 'lucide-react';
+import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus, Pencil, Store } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import type { Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -33,7 +33,8 @@ export default function DishDetailModal({
 
   const [copied, setCopied] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [showSticky, setShowSticky] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [loginHint, setLoginHint] = useState(false);
   const [draftRating, setDraftRating] = useState(5);
@@ -46,6 +47,7 @@ export default function DishDetailModal({
   const [activeImgIndex, setActiveImgIndex] = useState(0);
   const closingRef = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
 
   // Only render the portal once mounted on the client (SSR-safe).
@@ -71,10 +73,12 @@ export default function DishDetailModal({
     ? Math.min(activeImgIndex, images.length - 1)
     : 0;
   const isGuest = !user || Boolean(user.is_anonymous);
-  // Prefer the explicit address; fall back to the restaurant name for the query.
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    currentDish.address || currentDish.restaurant,
-  )}`;
+  // Prefer the Google Maps link saved with the dish; fall back to a search query.
+  const mapsUrl =
+    currentDish.google_map_url ||
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      currentDish.address || currentDish.restaurant,
+    )}`;
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'G';
 
   const formatCooldownDate = (date: Date) =>
@@ -91,6 +95,13 @@ export default function DishDetailModal({
     setIsClosing(true);
     setTimeout(onClose, 240);
   }, [onClose]);
+
+  // Keep the latest close handler in a ref so the drag listeners below never
+  // have to be re-subscribed when the parent re-renders.
+  const closeRef = useRef(handleClose);
+  useEffect(() => {
+    closeRef.current = handleClose;
+  }, [handleClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -180,11 +191,13 @@ export default function DishDetailModal({
     setPosting(false);
   };
 
-  // Expand the sheet to full screen once the user scrolls into the content.
+  // Reveal the sticky mini header only once the hero photo has scrolled away.
+  // The sheet height never changes while scrolling, so momentum stays smooth.
   const handleScroll = () => {
     const el = sheetRef.current;
     if (!el) return;
-    setExpanded(el.scrollTop > 24);
+    const threshold = heroRef.current?.offsetHeight ?? 200;
+    setShowSticky(el.scrollTop > threshold);
   };
 
   // Keep the photo counter in sync with the horizontal swipe position.
@@ -194,6 +207,158 @@ export default function DishDetailModal({
     const idx = Math.round(el.scrollLeft / el.clientWidth);
     setActiveImgIndex(Math.max(0, Math.min(idx, images.length - 1)));
   };
+
+  // --- Pull-down to dismiss -------------------------------------------------
+  // Grabbing the sheet while it rests at the very top and pulling down moves
+  // it along with the finger; releasing past the threshold — or flicking it
+  // downwards quickly — closes the sheet. While the content is scrolled the
+  // swipe keeps scrolling the content instead.
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el || isEditing) return;
+
+    const THRESHOLD = 80; // damped px that count as "pulled far enough"
+    const RESISTANCE = 0.85; // dampens the travel so the sheet feels elastic
+    const FLING_SPEED = 0.45; // px/ms that counts as a flick
+    const FLING_MIN = 24; // …but only after a small pull
+    const SLOP = 8; // travel needed before the gesture is claimed
+    const SPRING = 'transform 0.25s cubic-bezier(0.22, 1, 0.36, 1)';
+
+    let startY = 0;
+    let startX = 0;
+    let anchorY = 0;
+    let lastY = 0;
+    let lastTime = 0;
+    let velocity = 0;
+    let offset = 0;
+    let tracking = false;
+    let dragging = false;
+    let scrolled = false;
+
+    const paint = (value: number) => {
+      offset = value;
+      el.style.setProperty('--drag-offset', `${value}px`);
+    };
+
+    const begin = () => {
+      dragging = true;
+      el.style.transition = 'none';
+      setIsDragging(true);
+    };
+
+    const move = (y: number, time: number) => {
+      const dt = time - lastTime;
+      if (dt > 0) velocity = (y - lastY) / dt;
+      lastY = y;
+      lastTime = time;
+
+      if (!dragging) {
+        // Only claim the gesture when the content rests at the very top.
+        if (el.scrollTop > 0) return;
+        if (y - startY <= SLOP) return;
+        if (scrolled) anchorY = y; // the content scrolled first — rebase
+        begin();
+      }
+
+      paint(Math.max(0, (y - anchorY) * RESISTANCE));
+    };
+
+    const settle = () => {
+      if (!dragging) return;
+      dragging = false;
+      setIsDragging(false);
+      const flung = velocity > FLING_SPEED && offset > FLING_MIN;
+      if (offset > THRESHOLD || flung) {
+        closeRef.current();
+        return;
+      }
+      // Not far enough — spring back to the resting position.
+      el.style.transition = SPRING;
+      paint(0);
+    };
+
+    const start = (y: number, x: number) => {
+      startY = y;
+      startX = x;
+      anchorY = y;
+      lastY = y;
+      lastTime = performance.now();
+      velocity = 0;
+      offset = 0;
+      tracking = true;
+      dragging = false;
+      scrolled = el.scrollTop > 0;
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      start(e.touches[0].clientY, e.touches[0].clientX);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!tracking || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      if (el.scrollTop > 0) scrolled = true;
+      const dy = touch.clientY - startY;
+      const dx = touch.clientX - startX;
+      // Cancel the native scroll only for a clearly vertical swipe aimed at the
+      // sheet — a sideways swipe keeps scrolling the photo carousel.
+      const claimed = dragging || (dy > SLOP && Math.abs(dy) > Math.abs(dx));
+      if (claimed && el.scrollTop <= 0 && e.cancelable) {
+        e.preventDefault();
+      }
+      move(touch.clientY, performance.now());
+    };
+
+    const onTouchEnd = () => {
+      tracking = false;
+      settle();
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!tracking) return;
+      if (el.scrollTop > 0) scrolled = true;
+      move(e.clientY, performance.now());
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      tracking = false;
+      settle();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      // Touch is handled by the touch listeners above: only they can cancel
+      // the native scroll while the sheet is being dragged.
+      if (e.pointerType === 'touch' || e.button !== 0) return;
+      // Ignore drags that start on the scrollbar.
+      const rect = el.getBoundingClientRect();
+      if (e.clientX - rect.left > el.clientWidth) return;
+      start(e.clientY, e.clientX);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd);
+    el.addEventListener('touchcancel', onTouchEnd);
+    el.addEventListener('pointerdown', onPointerDown);
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+      el.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [isEditing]);
 
   // Inlined (not a child component) so styled-jsx scoping still applies.
   const stars = (value: number, size = 14) => (
@@ -224,335 +389,338 @@ export default function DishDetailModal({
       className={`detail-overlay ${isClosing ? 'is-closing' : ''}`}
       onClick={handleClose}
     >
-      <div
-        className={`detail-sheet ${expanded ? 'expanded' : ''}`}
-        ref={sheetRef}
-        onScroll={handleScroll}
-        role="dialog"
-        aria-modal="true"
-        aria-label={currentDish.restaurant}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="drag-handle" aria-hidden="true" />
-
-        {/* Sticky mini header — appears once the sheet is expanded */}
-        <div className={`sheet-sticky-bar ${expanded ? 'show' : ''}`}>
-          <span className="sticky-title">{currentDish.restaurant}</span>
-          <div className="sticky-actions">
+      {/* The shell carries the enter/exit animation so the sheet itself stays
+          free to be transformed by the pull-down gesture. */}
+      <div className="sheet-shell" onClick={(e) => e.stopPropagation()}>
+        <div
+          className={`detail-sheet ${isDragging ? 'is-dragging' : ''}`}
+          ref={sheetRef}
+          onScroll={handleScroll}
+          role="dialog"
+          aria-modal="true"
+          aria-label={currentDish.name}
+        >
+          {/* Sticky mini header — fades in once the hero photo is out of view.
+              It overlays the content (negative margin) so showing it never
+              shifts the layout around. */}
+          <div className={`sheet-sticky-bar ${showSticky ? 'show' : ''}`}>
+            <span className="sticky-spacer" aria-hidden="true" />
+            <span className="sticky-title">
+              {currentDish.name} · {currentDish.restaurant}
+            </span>
             <button
-              className="sticky-ask-btn"
-              onClick={handleAsk}
-              title={t.detail.askAiAbout}
-              aria-label={t.detail.askAiAbout}
+              className="sticky-share"
+              onClick={handleShare}
+              aria-label={t.detail.share}
+              title={t.detail.share}
             >
-              <Sparkles size={16} />
-            </button>
-            <button
-              className="sticky-close"
-              onClick={handleClose}
-              aria-label={t.detail.close}
-              title={t.detail.close}
-            >
-              <X size={18} />
+              <Share2 size={18} />
             </button>
           </div>
-        </div>
 
-        {/* Hero — Google Maps style swipeable photo carousel */}
-        <div className="hero">
-          {images.length > 0 ? (
-            <>
-              <div className="carousel-track" ref={carouselRef} onScroll={handleCarouselScroll}>
-                {images.map((src, i) => (
-                  <div key={`${src}-${i}`} className="carousel-slide">
-                    <Image
-                      src={src}
-                      alt={`${currentDish.name} ${i + 1}`}
-                      fill
-                      sizes="(max-width: 640px) 100vw, 560px"
-                      style={{ objectFit: 'cover' }}
-                      priority={i === 0}
-                    />
-                  </div>
+          {/* Hero — Google Maps style swipeable photo carousel (bleeds to the top edge) */}
+          <div className="hero" ref={heroRef}>
+            <div className="drag-handle" aria-hidden="true" />
+            {images.length > 0 ? (
+              <>
+                <div className="carousel-track" ref={carouselRef} onScroll={handleCarouselScroll}>
+                  {images.map((src, i) => (
+                    <div key={`${src}-${i}`} className="carousel-slide">
+                      <Image
+                        src={src}
+                        alt={`${currentDish.name} ${i + 1}`}
+                        fill
+                        sizes="(max-width: 640px) 100vw, 560px)"
+                        style={{ objectFit: 'cover' }}
+                        priority={i === 0}
+                        draggable={false}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {images.length > 1 && (
+                  <span className="carousel-badge">
+                    {safeImgIndex + 1} / {images.length}
+                  </span>
+                )}
+              </>
+            ) : (
+              <div className="hero-fallback" aria-hidden="true">
+                <Sparkles size={40} />
+              </div>
+            )}
+            <div className="hero-shade" />
+            <div className="hero-top">
+              <div className="hero-top-left">
+                <button
+                  className={`icon-btn fav ${isFav ? 'is-fav' : ''}`}
+                  onClick={() => toggleFavorite(currentDish.id)}
+                  aria-label={isFav ? t.random.saved : t.random.favorite}
+                  aria-pressed={isFav}
+                >
+                  <Heart
+                    size={19}
+                    fill={isFav ? 'var(--heart)' : 'none'}
+                    color={isFav ? 'var(--heart)' : '#fff'}
+                  />
+                </button>
+              </div>
+              <div className="hero-top-right">
+                <button
+                  className="icon-btn"
+                  onClick={handleEdit}
+                  aria-label={t.detail.edit}
+                  title={t.detail.edit}
+                >
+                  <Pencil size={18} />
+                </button>
+                <button
+                  className="icon-btn"
+                  onClick={handleShare}
+                  aria-label={t.detail.share}
+                  title={t.detail.share}
+                >
+                  <Share2 size={18} />
+                </button>
+              </div>
+            </div>
+            {copied && <span className="copied-toast">{t.detail.copied}</span>}
+            {loginHint && (
+              <span className="copied-toast login-toast">{t.detail.editRequireLogin}</span>
+            )}
+          </div>
+
+          {/* Body */}
+          <div className="detail-body">
+            <div className="detail-head">
+              <div className="detail-head-text">
+                <h2 className="detail-title">{currentDish.name}</h2>
+                <p className="detail-sub">
+                  <Store size={14} />
+                  <span>{currentDish.restaurant}</span>
+                </p>
+              </div>
+              <div className="detail-head-actions">
+                <button className="ask-ai-pill" onClick={handleAsk}>
+                  <Sparkles size={14} />
+                  <span>{t.detail.askAiPill || 'Hỏi AI'}</span>
+                </button>
+                <span className="detail-rating">
+                  <Star size={14} fill="var(--star)" color="var(--star)" />
+                  {rating.toFixed(1)}
+                </span>
+              </div>
+            </div>
+
+            {hashtags.length > 0 && (
+              <div className="detail-tags">
+                {hashtags.map((h) => (
+                  <span key={h} className="detail-tag">
+                    {h}
+                  </span>
                 ))}
               </div>
-              {images.length > 1 && (
-                <span className="carousel-badge">
-                  {safeImgIndex + 1} / {images.length}
-                </span>
-              )}
-            </>
-          ) : (
-            <div className="hero-fallback" aria-hidden="true">
-              <Sparkles size={40} />
-            </div>
-          )}
-          <div className="hero-shade" />
-          <div className="hero-top">
-            <button
-              className={`icon-btn fav ${isFav ? 'is-fav' : ''}`}
-              onClick={() => toggleFavorite(currentDish.id)}
-              aria-label={isFav ? t.random.saved : t.random.favorite}
-              aria-pressed={isFav}
-            >
-              <Heart
-                size={19}
-                fill={isFav ? 'var(--heart)' : 'none'}
-                color={isFav ? 'var(--heart)' : '#fff'}
-              />
-            </button>
-            <div className="hero-top-right">
-              <button
-                className="icon-btn"
-                onClick={handleEdit}
-                aria-label={t.detail.edit}
-                title={t.detail.edit}
+            )}
+
+            <div className="info-list">
+              <a
+                className="info-row info-row-link"
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={t.detail.tapToOpenMaps}
               >
-                <Pencil size={18} />
-              </button>
-              <button
-                className="icon-btn"
-                onClick={handleShare}
-                aria-label={t.detail.share}
-                title={t.detail.share}
-              >
-                <Share2 size={18} />
-              </button>
-            </div>
-          </div>
-          {copied && <span className="copied-toast">{t.detail.copied}</span>}
-          {loginHint && (
-            <span className="copied-toast login-toast">{t.detail.editRequireLogin}</span>
-          )}
-        </div>
-
-        {/* Body */}
-        <div className="detail-body">
-          <div className="detail-head">
-            <div className="detail-head-text">
-              <h2 className="detail-title">{currentDish.restaurant}</h2>
-              <p className="detail-sub">{currentDish.name}</p>
-            </div>
-            <div className="detail-head-actions">
-              <button className="ask-ai-pill" onClick={handleAsk}>
-                <Sparkles size={14} />
-                <span>{t.detail.askAiPill || 'Hỏi AI'}</span>
-              </button>
-              <span className="detail-rating">
-                <Star size={14} fill="var(--star)" color="var(--star)" />
-                {rating.toFixed(1)}
-              </span>
-            </div>
-          </div>
-
-          {hashtags.length > 0 && (
-            <div className="detail-tags">
-              {hashtags.map((h) => (
-                <span key={h} className="detail-tag">
-                  {h}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="info-list">
-            <a
-              className="info-row info-row-link"
-              href={mapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={t.detail.tapToOpenMaps}
-            >
-              <span className="info-icon">
-                <MapPin size={16} />
-              </span>
-              <div className="info-text">
-                <span className="info-label">{t.detail.address}</span>
-                <span className="info-value">
-                  {currentDish.address || `${currentDish.restaurant} (${t.detail.directions})`}
-                </span>
-              </div>
-              <span className="info-arrow" aria-hidden="true">
-                <ExternalLink size={15} />
-              </span>
-            </a>
-
-            <div className="info-row">
-              <span className="info-icon">
-                <Clock size={16} />
-              </span>
-              <div className="info-text">
-                <span className="info-label">{t.detail.openingTime}</span>
-                <span className="info-value">{currentDish.opening_time || t.detail.noHours}</span>
-              </div>
-            </div>
-
-            {currentDish.review_note && (
-              <div className="info-row">
                 <span className="info-icon">
-                  <Sparkles size={16} />
+                  <MapPin size={16} />
                 </span>
                 <div className="info-text">
-                  <span className="info-label">{t.detail.reviewNote}</span>
-                  <span className="info-value">{currentDish.review_note}</span>
+                  <span className="info-label">{t.detail.address}</span>
+                  <span className="info-value">
+                    {currentDish.address || t.detail.noAddress}
+                  </span>
+                </div>
+                <span className="info-arrow" aria-hidden="true">
+                  <ExternalLink size={15} />
+                </span>
+              </a>
+
+              <div className="info-row">
+                <span className="info-icon">
+                  <Clock size={16} />
+                </span>
+                <div className="info-text">
+                  <span className="info-label">{t.detail.openingTime}</span>
+                  <span className="info-value">{currentDish.opening_time || t.detail.noHours}</span>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Reviews & comments */}
-          <section className="reviews">
-            <div className="reviews-head">
-              <h3 className="reviews-title">{t.reviews.title}</h3>
-              <span className="reviews-count">{t.reviews.count(totalCount)}</span>
+              {currentDish.review_note && (
+                <div className="info-row">
+                  <span className="info-icon">
+                    <Sparkles size={16} />
+                  </span>
+                  <div className="info-text">
+                    <span className="info-label">{t.detail.reviewNote}</span>
+                    <span className="info-value">{currentDish.review_note}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {totalCount > 0 && (
-              <div className="reviews-summary">
-                <span className="summary-score">{averageRating.toFixed(1)}</span>
-                {stars(Math.round(averageRating), 16)}
+            {/* Reviews & comments */}
+            <section className="reviews">
+              <div className="reviews-head">
+                <h3 className="reviews-title">{t.reviews.title}</h3>
+                <span className="reviews-count">{t.reviews.count(totalCount)}</span>
               </div>
-            )}
 
-            {blockedUntil ? (
-              <p className="cooldown-note">
-                {t.reviews.cooldown(
-                  formatCooldownDate(blockedUntil),
-                )}
-              </p>
-            ) : (
-              <form className="composer" onSubmit={handlePost}>
-                <div className="avatar" aria-hidden="true">
-                  {userInitial}
+              {totalCount > 0 && (
+                <div className="reviews-summary">
+                  <span className="summary-score">{averageRating.toFixed(1)}</span>
+                  {stars(Math.round(averageRating), 16)}
                 </div>
-                <div className="composer-main">
-                  <span className="composer-label">{t.reviews.ratingLabel}</span>
-                  <div className="star-picker">
-                    {[1, 2, 3, 4, 5].map((n) => (
+              )}
+
+              {blockedUntil ? (
+                <p className="cooldown-note">
+                  {t.reviews.cooldown(
+                    formatCooldownDate(blockedUntil),
+                  )}
+                </p>
+              ) : (
+                <form className="composer" onSubmit={handlePost}>
+                  <div className="avatar" aria-hidden="true">
+                    {userInitial}
+                  </div>
+                  <div className="composer-main">
+                    <span className="composer-label">{t.reviews.ratingLabel}</span>
+                    <div className="star-picker">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          type="button"
+                          key={n}
+                          className="star-btn"
+                          onClick={() => setDraftRating(n)}
+                          aria-label={`${n}`}
+                          aria-pressed={n === draftRating}
+                        >
+                          <Star
+                            size={22}
+                            fill={n <= draftRating ? 'var(--star)' : 'none'}
+                            color={n <= draftRating ? 'var(--star)' : 'var(--text-faint)'}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      className="composer-input"
+                      rows={3}
+                      placeholder={t.reviews.placeholder}
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                    />
+                    {photoUrl && (
+                      <div className="photo-preview">
+                        <Image
+                          src={photoUrl}
+                          alt=""
+                          width={88}
+                          height={88}
+                          className="photo-preview-img"
+                        />
+                        <button
+                          type="button"
+                          className="photo-remove"
+                          onClick={() => setPhotoUrl(null)}
+                          aria-label={t.reviews.removePhoto}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+                    {formError && <p className="form-error">{formError}</p>}
+                    <div className="composer-actions">
                       <button
                         type="button"
-                        key={n}
-                        className="star-btn"
-                        onClick={() => setDraftRating(n)}
-                        aria-label={`${n}`}
-                        aria-pressed={n === draftRating}
+                        className="photo-btn"
+                        onClick={() => fileRef.current?.click()}
+                        disabled={uploading || posting}
                       >
-                        <Star
-                          size={22}
-                          fill={n <= draftRating ? 'var(--star)' : 'none'}
-                          color={n <= draftRating ? 'var(--star)' : 'var(--text-faint)'}
-                        />
+                        <ImagePlus size={16} />
+                        {uploading ? t.reviews.photoUploading : t.reviews.addPhoto}
                       </button>
-                    ))}
-                  </div>
-                  <textarea
-                    className="composer-input"
-                    rows={3}
-                    placeholder={t.reviews.placeholder}
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                  />
-                  {photoUrl && (
-                    <div className="photo-preview">
-                      <Image
-                        src={photoUrl}
-                        alt=""
-                        width={88}
-                        height={88}
-                        className="photo-preview-img"
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={handlePhoto}
                       />
                       <button
-                        type="button"
-                        className="photo-remove"
-                        onClick={() => setPhotoUrl(null)}
-                        aria-label={t.reviews.removePhoto}
+                        type="submit"
+                        className="post-btn"
+                        disabled={posting || uploading || !comment.trim()}
                       >
-                        <X size={14} />
+                        {posting ? t.reviews.posting : t.reviews.post}
                       </button>
                     </div>
-                  )}
-                  {formError && <p className="form-error">{formError}</p>}
-                  <div className="composer-actions">
-                    <button
-                      type="button"
-                      className="photo-btn"
-                      onClick={() => fileRef.current?.click()}
-                      disabled={uploading || posting}
-                    >
-                      <ImagePlus size={16} />
-                      {uploading ? t.reviews.photoUploading : t.reviews.addPhoto}
-                    </button>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      onChange={handlePhoto}
-                    />
-                    <button
-                      type="submit"
-                      className="post-btn"
-                      disabled={posting || uploading || !comment.trim()}
-                    >
-                      {posting ? t.reviews.posting : t.reviews.post}
-                    </button>
                   </div>
-                </div>
-              </form>
-            )}
+                </form>
+              )}
 
-            {reviewsLoading ? (
-              <div className="reviews-loading">{t.reviews.posting}</div>
-            ) : reviews.length === 0 ? (
-              <div className="reviews-empty">
-                <span className="empty-emoji">💬</span>
-                <p>{t.reviews.empty}</p>
-              </div>
-            ) : (
-              <ul className="review-list">
-                {reviews.map((r) => (
-                  <li key={r.id} className="review-item">
-                    <div className="avatar" aria-hidden="true">
-                      {(r.user_name[0] || '?').toUpperCase()}
-                    </div>
-                    <div className="review-body">
-                      <div className="review-top">
-                        <span className="review-name">{r.user_name}</span>
-                        <span className="review-time">{formatTime(r.created_at)}</span>
+              {reviewsLoading ? (
+                <div className="reviews-loading">{t.reviews.posting}</div>
+              ) : reviews.length === 0 ? (
+                <div className="reviews-empty">
+                  <span className="empty-emoji">💬</span>
+                  <p>{t.reviews.empty}</p>
+                </div>
+              ) : (
+                <ul className="review-list">
+                  {reviews.map((r) => (
+                    <li key={r.id} className="review-item">
+                      <div className="avatar" aria-hidden="true">
+                        {(r.user_name[0] || '?').toUpperCase()}
                       </div>
-                      {stars(r.rating, 13)}
-                      <p className="review-text">{r.comment}</p>
-                      {r.image_url && (
-                        <a
-                          className="review-photo"
-                          href={r.image_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                      <div className="review-body">
+                        <div className="review-top">
+                          <span className="review-name">{r.user_name}</span>
+                          <span className="review-time">{formatTime(r.created_at)}</span>
+                        </div>
+                        {stars(r.rating, 13)}
+                        <p className="review-text">{r.comment}</p>
+                        {r.image_url && (
+                          <a
+                            className="review-photo"
+                            href={r.image_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Image
+                              src={r.image_url}
+                              alt=""
+                              width={220}
+                              height={160}
+                              className="review-photo-img"
+                            />
+                          </a>
+                        )}
+                      </div>
+                      {user && r.user_id === user.id && (
+                        <button
+                          className="review-del"
+                          onClick={() => deleteReview(r.id)}
+                          aria-label={t.reviews.delete}
                         >
-                          <Image
-                            src={r.image_url}
-                            alt=""
-                            width={220}
-                            height={160}
-                            className="review-photo-img"
-                          />
-                        </a>
+                          {t.reviews.delete}
+                        </button>
                       )}
-                    </div>
-                    {user && r.user_id === user.id && (
-                      <button
-                        className="review-del"
-                        onClick={() => deleteReview(r.id)}
-                        aria-label={t.reviews.delete}
-                      >
-                        {t.reviews.delete}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
         </div>
       </div>
 
@@ -586,54 +754,91 @@ export default function DishDetailModal({
         .detail-overlay.is-closing {
           animation: overlayOut 0.22s ease both;
         }
-        .detail-sheet {
+        /* The shell plays the enter/exit animation; the sheet inside stays
+           free so the pull-down gesture can transform it on its own. */
+        .sheet-shell {
           position: relative;
           width: 100%;
           max-width: 560px;
+          display: flex;
+          flex-direction: column;
+          animation: sheetSlideUp 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+          will-change: transform;
+        }
+        .detail-overlay.is-closing .sheet-shell {
+          animation: sheetSlideDown 0.22s cubic-bezier(0.4, 0, 0.2, 1) both;
+        }
+        .detail-sheet {
+          position: relative;
+          width: 100%;
           max-height: 85dvh;
           overflow-y: auto;
+          overflow-x: hidden;
           background: var(--surface);
           border-radius: var(--r-xl) var(--r-xl) 0 0;
           box-shadow: var(--shadow-lg);
-          animation: sheetSlideUp 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) both;
-          will-change: transform, opacity;
-          transition: max-height var(--dur) var(--ease), border-radius var(--dur) var(--ease);
+          will-change: transform;
+          overscroll-behavior: contain;
+          transform: translateY(var(--drag-offset, 0px));
+          transition: transform 0.25s var(--ease);
         }
-        .detail-overlay.is-closing .detail-sheet {
-          animation: sheetSlideDown 0.22s cubic-bezier(0.4, 0, 0.2, 1) both;
+        .detail-sheet.is-dragging {
+          transition: none;
+          user-select: none;
+          -webkit-user-select: none;
+          cursor: grabbing;
         }
+        /* Floating grab handle — sits on top of the hero, never eats layout space */
         .drag-handle {
-          width: 40px;
-          height: 4px;
-          margin: 8px auto;
+          position: absolute;
+          top: 8px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 6;
+          width: 44px;
+          height: 5px;
           border-radius: var(--r-full);
-          background: var(--border-strong);
+          background: rgba(255, 255, 255, 0.8);
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+          pointer-events: none;
+          animation: handleBreathe 2.6s ease-in-out infinite;
         }
+        /* Sticky mini header — overlays the content (negative margin) so it
+           never shifts the layout, it just fades/slides in over the hero. */
         .sheet-sticky-bar {
           position: sticky;
           top: 0;
-          z-index: 4;
-          display: flex;
+          z-index: 6;
+          display: grid;
+          grid-template-columns: 36px minmax(0, 1fr) 36px;
           align-items: center;
-          justify-content: space-between;
           gap: 10px;
-          height: 0;
-          overflow: hidden;
+          height: 52px;
+          margin-bottom: -52px;
           padding: 0 14px;
           background: var(--surface);
-          border-bottom: 1px solid transparent;
+          border-bottom: 1px solid var(--border);
+          box-shadow: var(--shadow-sm);
           opacity: 0;
+          transform: translateY(-100%);
           pointer-events: none;
-          transition: height var(--dur) var(--ease), opacity var(--dur) var(--ease),
-            border-color var(--dur) var(--ease);
+          will-change: transform, opacity;
+          transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
         }
         .sheet-sticky-bar.show {
-          height: 52px;
           opacity: 1;
+          transform: translateY(0);
           pointer-events: auto;
-          border-bottom-color: var(--border);
+        }
+        .sticky-spacer {
+          width: 36px;
+          height: 36px;
         }
         .sticky-title {
+          min-width: 0;
+          text-align: center;
           font-weight: 700;
           font-size: 0.9375rem;
           color: var(--text);
@@ -641,14 +846,7 @@ export default function DishDetailModal({
           overflow: hidden;
           text-overflow: ellipsis;
         }
-        .sticky-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-shrink: 0;
-        }
-        .sticky-close,
-        .sticky-ask-btn {
+        .sticky-share {
           display: grid;
           place-items: center;
           width: 36px;
@@ -661,26 +859,19 @@ export default function DishDetailModal({
           cursor: pointer;
           transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
         }
-        .sticky-close:hover {
-          color: var(--heart);
-          background: var(--surface-3);
-        }
-        .sticky-ask-btn {
+        .sticky-share:hover {
           color: var(--primary);
-        }
-        .sticky-ask-btn:hover {
-          color: var(--primary-strong);
           background: var(--primary-soft);
         }
-        /* Mobile: expand the sheet to full screen on scroll */
+        /* Mobile: fixed sheet height — scrolling never changes it, so the
+           momentum stays smooth and the action buttons never jump away. */
         @media (max-width: 639px) {
-          .detail-sheet.expanded {
-            max-height: 100dvh;
-            height: 100dvh;
-            border-radius: 0;
+          .detail-sheet {
+            height: 90dvh;
+            max-height: 90dvh;
+            border-radius: 24px 24px 0 0;
           }
-        }
-        .hero {
+        }        .hero {
           position: relative;
           width: 100%;
           aspect-ratio: 16 / 9;
@@ -748,6 +939,10 @@ export default function DishDetailModal({
           justify-content: space-between;
           padding: 12px;
           z-index: 2;
+        }
+        .hero-top-left {
+          display: flex;
+          gap: 8px;
         }
         .hero-top-right {
           display: flex;
@@ -846,11 +1041,25 @@ export default function DishDetailModal({
           font-weight: 800;
           color: var(--text);
           line-height: 1.15;
+          word-break: break-word;
         }
         .detail-sub {
+          display: flex;
+          align-items: center;
+          gap: 5px;
           font-size: 0.9375rem;
           color: var(--text-soft);
-          margin-top: 2px;
+          margin-top: 4px;
+        }
+        .detail-sub :global(svg) {
+          flex-shrink: 0;
+          color: var(--primary-strong);
+        }
+        .detail-sub span {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
         .detail-rating {
           display: inline-flex;
@@ -1223,13 +1432,15 @@ export default function DishDetailModal({
             align-items: center;
             padding: 16px;
           }
+          .sheet-shell {
+            animation: modalZoomIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+          }
+          .detail-overlay.is-closing .sheet-shell {
+            animation: modalZoomOut 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+          }
           .detail-sheet {
             max-height: 86dvh;
             border-radius: var(--r-xl);
-            animation: modalZoomIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-          }
-          .detail-overlay.is-closing .detail-sheet {
-            animation: modalZoomOut 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
           }
           .drag-handle {
             display: none;
@@ -1242,6 +1453,17 @@ export default function DishDetailModal({
           }
           to {
             transform: translateY(0);
+          }
+        }
+        /* Gentle pulse — hints that the handle can be grabbed to pull the
+           sheet down. */
+        @keyframes handleBreathe {
+          0%,
+          100% {
+            opacity: 0.75;
+          }
+          50% {
+            opacity: 1;
           }
         }
         @keyframes sheetSlideDown {

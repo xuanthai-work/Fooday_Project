@@ -25,13 +25,14 @@ export interface Food {
   images?: string[] | null;
   tag: string | null;
   address?: string | null;
+  google_map_url?: string | null;
   opening_time?: string | null;
   review_note?: string | null;
   created_by: string | null;
 }
 
 const COLUMNS =
-  'id, slug, name, category, restaurant, rating, image_url, images, tag, address, opening_time, review_note, created_by';
+  'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
 
 // Shared store so a newly added dish appears app-wide (Home + Profile) without reload.
 const EMPTY: Food[] = [];

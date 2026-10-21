@@ -77,3 +77,25 @@ export const dishImageService = {
     }
   },
 };
+
+export interface ParsedMapInfo {
+  restaurant_name?: string | null;
+  address?: string | null;
+  resolved_url?: string | null;
+}
+
+export const mapService = {
+  async parseMapLink(url: string): Promise<ParsedMapInfo | null> {
+    try {
+      const response = await fetch(
+        resolveEndpoint('/parse-map-link') + `?url=${encodeURIComponent(url)}`,
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data as ParsedMapInfo;
+    } catch (error) {
+      console.error('Connection error parsing map link:', error);
+      return null;
+    }
+  },
+};

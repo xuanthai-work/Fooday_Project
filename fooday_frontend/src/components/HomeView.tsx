@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { Search, Heart, Star, Bell, Sparkles } from 'lucide-react';
+import { Search, Heart, Star, Sparkles } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -130,10 +130,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           <h1 className="home-title">{t.home.title}</h1>
         </div>
         <div className="header-actions">
-          <button className="icon-button" aria-label={t.home.notifications}>
-            <Bell size={20} />
-            <span className="notif-dot" />
-          </button>
           <ThemeToggle />
         </div>
       </header>
@@ -317,39 +313,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           display: flex;
           align-items: center;
           gap: 10px;
-        }
-        .icon-button {
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 44px;
-          height: 44px;
-          border-radius: var(--r-full);
-          border: 1px solid var(--border);
-          background: var(--surface-2);
-          color: var(--text-soft);
-          cursor: pointer;
-          transition: transform var(--dur-fast) var(--ease),
-            color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-        }
-        .icon-button:hover {
-          transform: translateY(-2px);
-          color: var(--primary-strong);
-          border-color: var(--primary);
-        }
-        .icon-button:active {
-          transform: scale(0.94);
-        }
-        .notif-dot {
-          position: absolute;
-          top: 10px;
-          right: 11px;
-          width: 8px;
-          height: 8px;
-          border-radius: var(--r-full);
-          background: var(--heart);
-          border: 2px solid var(--surface-2);
         }
         .search-bar {
           display: flex;

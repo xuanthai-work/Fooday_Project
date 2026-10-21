@@ -726,7 +726,7 @@ export default function ChatView({
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 12px clamp(12px, 4vw, 16px) calc(12px + env(safe-area-inset-bottom, 0px));
+          padding: 10px clamp(12px, 4vw, 16px);
         }
         @keyframes heartPop {
           0% { transform: scale(0.55); }

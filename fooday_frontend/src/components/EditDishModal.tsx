@@ -6,9 +6,10 @@ import { X, Upload, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { refreshFoods, Food, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
-import { dishImageService, DishImage } from '@/services/api';
+import { dishImageService, mapService, DishImage } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, parseHashtags, serializeHashtags } from '@/lib/hashtags';
+import { isGoogleMapsUrl } from '@/lib/maps';
 import DishNameAutocomplete from './DishNameAutocomplete';
 
 export { TRENDING_HASHTAGS };
@@ -25,8 +26,10 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
 
   const [name, setName] = useState(dish.name ?? '');
   const [restaurant, setRestaurant] = useState(dish.restaurant ?? '');
+  const [googleMapUrl, setGoogleMapUrl] = useState(dish.google_map_url ?? '');
   const [category, setCategory] = useState<FoodCategory>(dish.category ?? 'Foods');
   const [address, setAddress] = useState(dish.address ?? '');
+  const [isResolvingMap, setIsResolvingMap] = useState(false);
   const [openingTime, setOpeningTime] = useState(dish.opening_time ?? '');
   const [selectedTags, setSelectedTags] = useState<string[]>(() => parseHashtags(dish.tag));
   const [tagInput, setTagInput] = useState('');
@@ -68,6 +71,48 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
       clearTimeout(timer);
     };
   }, [name]);
+
+  // Auto-resolve the Google Maps link: fill the address (and the restaurant
+  // name when it is still empty) as soon as the backend resolves the link.
+  const resolveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolveSeqRef = useRef(0);
+
+  const handleGoogleMapUrlChange = (value: string) => {
+    setGoogleMapUrl(value);
+    resolveSeqRef.current += 1;
+    if (resolveTimerRef.current) {
+      clearTimeout(resolveTimerRef.current);
+      resolveTimerRef.current = null;
+    }
+
+    const url = value.trim();
+    if (!isGoogleMapsUrl(url)) {
+      setIsResolvingMap(false);
+      return;
+    }
+
+    setIsResolvingMap(true);
+    resolveTimerRef.current = setTimeout(async () => {
+      resolveTimerRef.current = null;
+      const seq = resolveSeqRef.current;
+      const info = await mapService.parseMapLink(url);
+      if (seq !== resolveSeqRef.current) return;
+      setIsResolvingMap(false);
+      if (!info) return;
+      if (info.address) setAddress(info.address);
+      if (info.restaurant_name) {
+        setRestaurant((prev) => (prev.trim() ? prev : (info.restaurant_name as string)));
+      }
+    }, 500);
+  };
+
+  // Drop a pending resolution when the modal unmounts.
+  useEffect(
+    () => () => {
+      if (resolveTimerRef.current) clearTimeout(resolveTimerRef.current);
+    },
+    [],
+  );
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -145,6 +190,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         restaurant: restaurant.trim(),
         category,
         address: address.trim() || null,
+        google_map_url: googleMapUrl.trim() || null,
         opening_time: openingTime.trim() || null,
         tag: finalTag || null,
         review_note: reviewNote.trim() || null,
@@ -274,7 +320,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             )}
           </div>
 
-          <label className="field">
+          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
             <span className="label">{t.editDish.restaurant}</span>
             <input
               value={restaurant}
@@ -282,6 +328,23 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
               placeholder={t.addDish.restaurantPlaceholder}
               required
             />
+          </label>
+
+          {/* Google Maps link — auto-resolves the address */}
+          <label className="field">
+            <span className="label">{t.map.googleMapLabel}</span>
+            <input
+              value={googleMapUrl}
+              onChange={(e) => handleGoogleMapUrlChange(e.target.value)}
+              placeholder={t.map.googleMapPlaceholder}
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={t.map.googleMapLabel}
+            />
+            {googleMapUrl.trim() && !isGoogleMapsUrl(googleMapUrl) && (
+              <span className="field-hint error-hint">{t.map.googleMapRequired}</span>
+            )}
           </label>
 
           <div className="field">
@@ -312,13 +375,24 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           </div>
 
           <div className="row">
-            <label className="field">
-              <span className="label">{t.editDish.address}</span>
+            <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
+              <span className="label">{t.map.addressLabel}</span>
               <input
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder={t.detail.noAddress}
+                placeholder={
+                  isResolvingMap ? t.map.resolvingAddress : t.map.addressPlaceholder
+                }
+                disabled={isResolvingMap}
+                aria-busy={isResolvingMap}
+                aria-label={t.map.addressLabel}
               />
+              {isResolvingMap && (
+                <span className="field-hint resolving-hint">
+                  <Loader2 size={13} className="spin" />
+                  {t.map.resolvingAddress}
+                </span>
+              )}
             </label>
 
             <label className="field">
@@ -680,6 +754,25 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         .field textarea:focus {
           border-color: var(--primary);
           box-shadow: 0 0 0 3px var(--ring);
+        }
+        .field.resolving input {
+          opacity: 0.5;
+          pointer-events: none;
+          cursor: progress;
+        }
+        .field-hint {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.3;
+        }
+        .resolving-hint {
+          color: var(--primary-strong);
+        }
+        .error-hint {
+          color: var(--heart);
         }
         .chips {
           display: flex;

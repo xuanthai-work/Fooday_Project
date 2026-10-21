@@ -163,6 +163,14 @@ const vi = {
     postFailed: 'Không gửi được đánh giá. Bạn thử lại nhé.',
     cooldown: (date: string) => `Bạn đã đánh giá quán này. Có thể đánh giá lại sau ${date}.`,
   },
+  map: {
+    googleMapLabel: 'Link Google Maps',
+    googleMapPlaceholder: 'Dán link Google Maps (bắt buộc)',
+    googleMapRequired: 'Vui lòng nhập link Google Maps của quán',
+    addressLabel: 'Địa chỉ',
+    addressPlaceholder: 'Địa chỉ quán (tự động điền hoặc nhập tay)',
+    resolvingAddress: 'Đang lấy địa chỉ từ Google Maps...',
+  },
   addDish: {
     title: 'Thêm món ăn',
     close: 'Đóng',
@@ -398,6 +406,14 @@ const en: Translation = {
     uploadFailed: 'Could not upload the photo.',
     postFailed: "Couldn't post your review. Please try again.",
     cooldown: (date: string) => `You already reviewed this place. You can review it again after ${date}.`,
+  },
+  map: {
+    googleMapLabel: 'Google Maps Link',
+    googleMapPlaceholder: 'Paste Google Maps link (required)',
+    googleMapRequired: 'Please enter the Google Maps link',
+    addressLabel: 'Address',
+    addressPlaceholder: 'Restaurant address (auto-filled or manual)',
+    resolvingAddress: 'Fetching address from Google Maps...',
   },
   addDish: {
     title: 'Add a dish',
