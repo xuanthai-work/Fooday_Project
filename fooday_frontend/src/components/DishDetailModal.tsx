@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus, Pencil, Store } from 'lucide-react';
+import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus, Pencil, UtensilsCrossed } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import type { Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -35,6 +35,7 @@ export default function DishDetailModal({
   const [isClosing, setIsClosing] = useState(false);
   const [showSticky, setShowSticky] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragY, setDragY] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [loginHint, setLoginHint] = useState(false);
   const [draftRating, setDraftRating] = useState(5);
@@ -49,6 +50,10 @@ export default function DishDetailModal({
   const sheetRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
+  // Pull-down gesture bookkeeping — refs, so the handlers never need to be
+  // re-created (and never read a stale value mid-gesture).
+  const startYRef = useRef(0);
+  const isPullingRef = useRef(false);
 
   // Only render the portal once mounted on the client (SSR-safe).
   const [mounted, setMounted] = useState(false);
@@ -95,13 +100,6 @@ export default function DishDetailModal({
     setIsClosing(true);
     setTimeout(onClose, 240);
   }, [onClose]);
-
-  // Keep the latest close handler in a ref so the drag listeners below never
-  // have to be re-subscribed when the parent re-renders.
-  const closeRef = useRef(handleClose);
-  useEffect(() => {
-    closeRef.current = handleClose;
-  }, [handleClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -209,156 +207,90 @@ export default function DishDetailModal({
   };
 
   // --- Pull-down to dismiss -------------------------------------------------
-  // Grabbing the sheet while it rests at the very top and pulling down moves
-  // it along with the finger; releasing past the threshold — or flicking it
-  // downwards quickly — closes the sheet. While the content is scrolled the
-  // swipe keeps scrolling the content instead.
-  useEffect(() => {
+  // Grabbing the sheet while it rests at the very top and pulling it down
+  // moves it along with the pointer; releasing past the threshold closes the
+  // sheet, releasing earlier springs it back to where it was. While the content
+  // is scrolled the gesture keeps scrolling the content instead. On a desktop
+  // the mouse wheel does the same: scrolling back up while the sheet rests at
+  // the top dismisses it.
+  //
+  // These are plain React synthetic events bound straight to the sheet
+  // element, so they always hit the real DOM node — no listeners to wire up
+  // by hand and nothing to clean up on unmount.
+  const PULL_THRESHOLD = 75; // damped px that count as "pulled far enough"
+  const PULL_RESISTANCE = 0.75; // dampens the travel so the sheet feels elastic
+  const WHEEL_DISMISS = -20; // wheel px that count as "scrolled back up"
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (isEditing) return;
     const el = sheetRef.current;
-    if (!el || isEditing) return;
+    if (!el || el.scrollTop > 0) return;
+    // Browsers report the wheel travel in pixels, lines or pages.
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+    if (e.deltaY * unit < WHEEL_DISMISS) handleClose();
+  };
 
-    const THRESHOLD = 80; // damped px that count as "pulled far enough"
-    const RESISTANCE = 0.85; // dampens the travel so the sheet feels elastic
-    const FLING_SPEED = 0.45; // px/ms that counts as a flick
-    const FLING_MIN = 24; // …but only after a small pull
-    const SLOP = 8; // travel needed before the gesture is claimed
-    const SPRING = 'transform 0.25s cubic-bezier(0.22, 1, 0.36, 1)';
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isEditing) return;
+    const el = sheetRef.current;
+    if (el && el.scrollTop <= 0 && e.touches.length === 1) {
+      startYRef.current = e.touches[0].clientY;
+      isPullingRef.current = true;
+    } else {
+      isPullingRef.current = false;
+    }
+  };
 
-    let startY = 0;
-    let startX = 0;
-    let anchorY = 0;
-    let lastY = 0;
-    let lastTime = 0;
-    let velocity = 0;
-    let offset = 0;
-    let tracking = false;
-    let dragging = false;
-    let scrolled = false;
-
-    const paint = (value: number) => {
-      offset = value;
-      el.style.setProperty('--drag-offset', `${value}px`);
-    };
-
-    const begin = () => {
-      dragging = true;
-      el.style.transition = 'none';
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isPullingRef.current || isEditing) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const diff = touch.clientY - startYRef.current;
+    if (diff > 0) {
       setIsDragging(true);
-    };
+      setDragY(diff * PULL_RESISTANCE);
+    }
+  };
 
-    const move = (y: number, time: number) => {
-      const dt = time - lastTime;
-      if (dt > 0) velocity = (y - lastY) / dt;
-      lastY = y;
-      lastTime = time;
+  const handleTouchEnd = () => {
+    if (!isPullingRef.current) return;
+    isPullingRef.current = false;
+    setIsDragging(false);
+    if (dragY > PULL_THRESHOLD && !isEditing) handleClose();
+    else setDragY(0);
+  };
 
-      if (!dragging) {
-        // Only claim the gesture when the content rests at the very top.
-        if (el.scrollTop > 0) return;
-        if (y - startY <= SLOP) return;
-        if (scrolled) anchorY = y; // the content scrolled first — rebase
-        begin();
-      }
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isEditing || e.button !== 0) return;
+    // Clicks on controls must keep working — they never start a drag.
+    const target = e.target as Element | null;
+    if (target?.closest('button, a, input, textarea, select')) return;
+    const el = sheetRef.current;
+    if (el && el.scrollTop <= 0) {
+      startYRef.current = e.clientY;
+      isPullingRef.current = true;
+    } else {
+      isPullingRef.current = false;
+    }
+  };
 
-      paint(Math.max(0, (y - anchorY) * RESISTANCE));
-    };
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isPullingRef.current || isEditing) return;
+    const diff = e.clientY - startYRef.current;
+    if (diff > 0) {
+      if (!isDragging) window.getSelection()?.removeAllRanges();
+      setIsDragging(true);
+      setDragY(diff * PULL_RESISTANCE);
+    }
+  };
 
-    const settle = () => {
-      if (!dragging) return;
-      dragging = false;
-      setIsDragging(false);
-      const flung = velocity > FLING_SPEED && offset > FLING_MIN;
-      if (offset > THRESHOLD || flung) {
-        closeRef.current();
-        return;
-      }
-      // Not far enough — spring back to the resting position.
-      el.style.transition = SPRING;
-      paint(0);
-    };
-
-    const start = (y: number, x: number) => {
-      startY = y;
-      startX = x;
-      anchorY = y;
-      lastY = y;
-      lastTime = performance.now();
-      velocity = 0;
-      offset = 0;
-      tracking = true;
-      dragging = false;
-      scrolled = el.scrollTop > 0;
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      start(e.touches[0].clientY, e.touches[0].clientX);
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (!tracking || e.touches.length !== 1) return;
-      const touch = e.touches[0];
-      if (el.scrollTop > 0) scrolled = true;
-      const dy = touch.clientY - startY;
-      const dx = touch.clientX - startX;
-      // Cancel the native scroll only for a clearly vertical swipe aimed at the
-      // sheet — a sideways swipe keeps scrolling the photo carousel.
-      const claimed = dragging || (dy > SLOP && Math.abs(dy) > Math.abs(dx));
-      if (claimed && el.scrollTop <= 0 && e.cancelable) {
-        e.preventDefault();
-      }
-      move(touch.clientY, performance.now());
-    };
-
-    const onTouchEnd = () => {
-      tracking = false;
-      settle();
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-      if (!tracking) return;
-      if (el.scrollTop > 0) scrolled = true;
-      move(e.clientY, performance.now());
-    };
-
-    const onPointerUp = () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerUp);
-      tracking = false;
-      settle();
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      // Touch is handled by the touch listeners above: only they can cancel
-      // the native scroll while the sheet is being dragged.
-      if (e.pointerType === 'touch' || e.button !== 0) return;
-      // Ignore drags that start on the scrollbar.
-      const rect = el.getBoundingClientRect();
-      if (e.clientX - rect.left > el.clientWidth) return;
-      start(e.clientY, e.clientX);
-      window.addEventListener('pointermove', onPointerMove);
-      window.addEventListener('pointerup', onPointerUp);
-      window.addEventListener('pointercancel', onPointerUp);
-    };
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd);
-    el.addEventListener('touchcancel', onTouchEnd);
-    el.addEventListener('pointerdown', onPointerDown);
-
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
-      el.removeEventListener('touchcancel', onTouchEnd);
-      el.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerUp);
-    };
-  }, [isEditing]);
+  const handleMouseUp = () => {
+    if (!isPullingRef.current) return;
+    isPullingRef.current = false;
+    setIsDragging(false);
+    if (dragY > PULL_THRESHOLD && !isEditing) handleClose();
+    else setDragY(0);
+  };
 
   // Inlined (not a child component) so styled-jsx scoping still applies.
   const stars = (value: number, size = 14) => (
@@ -396,9 +328,22 @@ export default function DishDetailModal({
           className={`detail-sheet ${isDragging ? 'is-dragging' : ''}`}
           ref={sheetRef}
           onScroll={handleScroll}
+          onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          style={{
+            transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+            transition: isDragging ? 'none' : 'transform 0.25s var(--ease)',
+          }}
           role="dialog"
           aria-modal="true"
-          aria-label={currentDish.name}
+          aria-label={currentDish.restaurant}
         >
           {/* Sticky mini header — fades in once the hero photo is out of view.
               It overlays the content (negative margin) so showing it never
@@ -406,7 +351,7 @@ export default function DishDetailModal({
           <div className={`sheet-sticky-bar ${showSticky ? 'show' : ''}`}>
             <span className="sticky-spacer" aria-hidden="true" />
             <span className="sticky-title">
-              {currentDish.name} · {currentDish.restaurant}
+              {currentDish.restaurant} · {currentDish.name}
             </span>
             <button
               className="sticky-share"
@@ -494,10 +439,10 @@ export default function DishDetailModal({
           <div className="detail-body">
             <div className="detail-head">
               <div className="detail-head-text">
-                <h2 className="detail-title">{currentDish.name}</h2>
+                <h2 className="detail-title">{currentDish.restaurant}</h2>
                 <p className="detail-sub">
-                  <Store size={14} />
-                  <span>{currentDish.restaurant}</span>
+                  <UtensilsCrossed size={14} />
+                  <span>{currentDish.name}</span>
                 </p>
               </div>
               <div className="detail-head-actions">
@@ -778,8 +723,12 @@ export default function DishDetailModal({
           border-radius: var(--r-xl) var(--r-xl) 0 0;
           box-shadow: var(--shadow-lg);
           will-change: transform;
-          overscroll-behavior: contain;
-          transform: translateY(var(--drag-offset, 0px));
+          /* No scroll chaining and no rubber-band bounce at the top: the
+             pull-down gesture owns that edge. */
+          overscroll-behavior: none;
+          /* The pull-down offset is driven from React (inline transform);
+             this is the resting position. */
+          transform: translateY(0);
           transition: transform 0.25s var(--ease);
         }
         .detail-sheet.is-dragging {
@@ -788,13 +737,39 @@ export default function DishDetailModal({
           -webkit-user-select: none;
           cursor: grabbing;
         }
-        /* Floating grab handle — sits on top of the hero, never eats layout space */
+        /* Photos must never start a native drag while the sheet is pulled. */
+        .detail-sheet :global(img) {
+          -webkit-user-drag: none;
+        }
+        /* Floating grab handle — sits on top of the hero, never eats layout
+           space. The padding turns it into a generous hit-box while the
+           visible bar is drawn by the pseudo element below. */
         .drag-handle {
+          position: absolute;
+          top: 0;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 7;
+          box-sizing: content-box;
+          width: 44px;
+          height: 5px;
+          padding: 16px 40px;
+          background: none;
+          cursor: grab;
+          pointer-events: auto;
+          touch-action: none;
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-user-drag: none;
+          -webkit-tap-highlight-color: transparent;
+          animation: handleBreathe 2.6s ease-in-out infinite;
+        }
+        .drag-handle::after {
+          content: '';
           position: absolute;
           top: 8px;
           left: 50%;
           transform: translateX(-50%);
-          z-index: 6;
           width: 44px;
           height: 5px;
           border-radius: var(--r-full);
@@ -802,8 +777,10 @@ export default function DishDetailModal({
           backdrop-filter: blur(4px);
           -webkit-backdrop-filter: blur(4px);
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-          pointer-events: none;
-          animation: handleBreathe 2.6s ease-in-out infinite;
+        }
+        .detail-sheet.is-dragging .drag-handle,
+        .detail-sheet.is-dragging .hero-top {
+          cursor: grabbing;
         }
         /* Sticky mini header — overlays the content (negative margin) so it
            never shifts the layout, it just fades/slides in over the hero. */
@@ -939,6 +916,15 @@ export default function DishDetailModal({
           justify-content: space-between;
           padding: 12px;
           z-index: 2;
+          /* Second drag zone: the empty space around the hero buttons pulls
+             the sheet down just like the handle does. Vertical panning stays
+             allowed so the content can still be scrolled from here. */
+          cursor: grab;
+          touch-action: pan-y;
+          user-select: none;
+          -webkit-user-select: none;
+          -webkit-user-drag: none;
+          -webkit-tap-highlight-color: transparent;
         }
         .hero-top-left {
           display: flex;
