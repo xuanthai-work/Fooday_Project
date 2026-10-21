@@ -2,12 +2,16 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { X, Upload, Loader2, Sparkles } from 'lucide-react';
+import { X, Upload, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { refreshFoods, Food, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
 import { dishImageService, DishImage } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
+import { TRENDING_HASHTAGS, normalizeSingleHashtag, parseHashtags, serializeHashtags } from '@/lib/hashtags';
+import DishNameAutocomplete from './DishNameAutocomplete';
+
+export { TRENDING_HASHTAGS };
 
 interface EditDishModalProps {
   dish: Food;
@@ -24,7 +28,8 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   const [category, setCategory] = useState<FoodCategory>(dish.category ?? 'Foods');
   const [address, setAddress] = useState(dish.address ?? '');
   const [openingTime, setOpeningTime] = useState(dish.opening_time ?? '');
-  const [tag, setTag] = useState(dish.tag ?? '');
+  const [selectedTags, setSelectedTags] = useState<string[]>(() => parseHashtags(dish.tag));
+  const [tagInput, setTagInput] = useState('');
   const [reviewNote, setReviewNote] = useState(dish.review_note ?? '');
   const [imageList, setImageList] = useState<string[]>(
     dish.images && dish.images.length > 0
@@ -103,11 +108,35 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
 
   const canSubmit = Boolean(name.trim() && restaurant.trim() && imageList.length > 0) && !busy;
 
+  const handleAddTag = (raw: string) => {
+    const normalized = normalizeSingleHashtag(raw);
+    setTagInput('');
+    if (!normalized) return;
+    setSelectedTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+  };
+
+  const handleTogglePreset = (preset: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(preset) ? prev.filter((item) => item !== preset) : [...prev, preset],
+    );
+  };
+
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+      e.preventDefault();
+      handleAddTag(tagInput);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
+
+    const finalTag = serializeHashtags(
+      tagInput.trim() ? [...selectedTags, tagInput] : selectedTags,
+    );
 
     const { data, error: updErr } = await supabase
       .from('foods')
@@ -117,7 +146,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         category,
         address: address.trim() || null,
         opening_time: openingTime.trim() || null,
-        tag: tag.trim() || null,
+        tag: finalTag || null,
         review_note: reviewNote.trim() || null,
         image_url: imageList[0] || dish.image_url || '',
         images: imageList,
@@ -197,10 +226,19 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
                 </button>
               </div>
             ) : (
-              <div className="preview-empty">
-                <Sparkles size={20} />
-                <span>{t.addDish.pasteHint}</span>
-              </div>
+              <button
+                type="button"
+                className="preview-empty"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <Loader2 size={22} className="spin" />
+                ) : (
+                  <Upload size={22} />
+                )}
+                <span>{uploading ? t.addDish.uploading : t.addDish.pasteHint}</span>
+              </button>
             )}
 
             <input
@@ -246,15 +284,16 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             />
           </label>
 
-          <label className="field">
+          <div className="field">
             <span className="label">{t.editDish.dishName}</span>
-            <input
+            <DishNameAutocomplete
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={setName}
               placeholder={t.addDish.dishNamePlaceholder}
               required
+              aria-label={t.editDish.dishName}
             />
-          </label>
+          </div>
 
           <div className="field">
             <span className="label">{t.editDish.category}</span>
@@ -272,16 +311,16 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             </div>
           </div>
 
-          <label className="field">
-            <span className="label">{t.editDish.address}</span>
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder={t.detail.noAddress}
-            />
-          </label>
-
           <div className="row">
+            <label className="field">
+              <span className="label">{t.editDish.address}</span>
+              <input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder={t.detail.noAddress}
+              />
+            </label>
+
             <label className="field">
               <span className="label">{t.editDish.openingTime}</span>
               <input
@@ -290,15 +329,68 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
                 placeholder={t.detail.noHours}
               />
             </label>
+          </div>
 
-            <label className="field">
-              <span className="label">{t.editDish.tag}</span>
+          {/* Tags — multi-select presets + custom hashtag input */}
+          <div className="field">
+            <span className="label">{t.editDish.tag}</span>
+
+            {selectedTags.length > 0 && (
+              <div className="selected-tags">
+                {selectedTags.map((selected) => (
+                  <span key={selected} className="selected-tag-chip">
+                    {selected}
+                    <button
+                      type="button"
+                      className="remove-tag-btn"
+                      onClick={() =>
+                        setSelectedTags((prev) => prev.filter((item) => item !== selected))
+                      }
+                      aria-label={`Remove ${selected}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="tag-input-row">
               <input
-                value={tag}
-                onChange={(e) => setTag(e.target.value)}
-                placeholder={t.addDish.tagPlaceholder}
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={handleTagKeyDown}
+                placeholder={t.editDish.tagPlaceholder}
+                aria-label={t.editDish.tag}
               />
-            </label>
+              <button
+                type="button"
+                className="tag-add-btn"
+                onClick={() => handleAddTag(tagInput)}
+              >
+                {t.editDish.addTag}
+              </button>
+            </div>
+
+            <div className="hashtag-presets">
+              <span className="hashtag-presets-label">{t.editDish.trendingHashtagsLabel}</span>
+              <div className="hashtag-chips">
+                {TRENDING_HASHTAGS.map((preset) => {
+                  const isSelected = selectedTags.includes(preset);
+                  return (
+                    <button
+                      type="button"
+                      key={preset}
+                      className={`hashtag-chip ${isSelected ? 'active' : ''}`}
+                      onClick={() => handleTogglePreset(preset)}
+                      aria-pressed={isSelected}
+                    >
+                      {preset}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <label className="field">
@@ -495,14 +587,29 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           align-items: center;
           justify-content: center;
           gap: 8px;
-          min-height: 92px;
-          padding: 12px;
+          min-height: 96px;
+          width: 100%;
+          padding: 16px;
           border-radius: var(--r-md);
           border: 1.5px dashed var(--border-strong);
           background: var(--surface-2);
-          color: var(--text-faint);
-          font-size: 13px;
+          color: var(--text-soft);
+          font-size: 13.5px;
+          font-weight: 600;
           text-align: center;
+          cursor: pointer;
+          transition: border-color var(--dur-fast) var(--ease),
+            color var(--dur-fast) var(--ease),
+            background var(--dur-fast) var(--ease);
+        }
+        .preview-empty:hover:not(:disabled) {
+          border-color: var(--primary);
+          color: var(--primary-strong);
+          background: var(--surface-3);
+        }
+        .preview-empty:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
         .thumb-img {
           object-fit: cover;
@@ -594,6 +701,114 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           background: var(--grad-primary);
           color: var(--primary-contrast);
           border-color: transparent;
+        }
+        .hashtag-presets {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin-top: 3px;
+        }
+        .hashtag-presets-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--text-faint);
+          letter-spacing: 0.01em;
+        }
+        .hashtag-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .hashtag-chip {
+          height: 24px;
+          padding: 3px 8px;
+          display: inline-flex;
+          align-items: center;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          color: var(--text-soft);
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1;
+          white-space: nowrap;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease);
+        }
+        .hashtag-chip:hover {
+          transform: translateY(-1px);
+          border-color: var(--primary);
+          color: var(--primary-strong);
+        }
+        .hashtag-chip.active {
+          background: var(--grad-primary);
+          border-color: var(--primary);
+          color: var(--primary-contrast);
+          box-shadow: var(--shadow-primary);
+        }
+        .selected-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 8px;
+        }
+        .selected-tag-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 3px 8px;
+          border-radius: var(--r-full);
+          background: var(--primary-soft-2);
+          color: var(--primary-strong);
+          border: 1px solid var(--primary-soft);
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+        .remove-tag-btn {
+          border: none;
+          background: transparent;
+          color: var(--primary-strong);
+          font-size: 14px;
+          line-height: 1;
+          padding: 0;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+          transition: color var(--dur-fast) var(--ease);
+        }
+        .remove-tag-btn:hover {
+          color: var(--heart);
+        }
+        .tag-input-row {
+          display: flex;
+          gap: 6px;
+        }
+        .tag-input-row input {
+          flex: 1;
+          min-width: 0;
+          width: auto;
+        }
+        .tag-add-btn {
+          flex-shrink: 0;
+          height: 44px;
+          padding: 0 14px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+          font-family: inherit;
+          font-size: 13.5px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .tag-add-btn:hover {
+          background: var(--primary-soft-2);
+          border-color: var(--primary);
         }
         .error {
           padding: 10px 12px;

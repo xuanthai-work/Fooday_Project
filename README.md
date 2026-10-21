@@ -85,6 +85,6 @@ We are currently transitioning into **Phase 2**, which focuses on Data Migration
 ## 🎨 Design Philosophy
 Fooday strictly enforces a highly polished, proprietary design language:
 - **Colors:** Vibrant lavenders (`#8E97FD`), stark contrasts, and soft gradients.
-- **Typography:** `Outfit` for display headings and `Inter` for functional sans-serif text.
+- **Typography:** `Plus Jakarta Sans` for display headings and `Inter` for functional sans-serif text (both with Vietnamese subsets).
 - **Motion:** Micro-animations on all interactive elements.
 - **Accessibility:** Minimum `44px` touch targets enforced everywhere. Fluid `clamp()` typography to prevent layout shifts.

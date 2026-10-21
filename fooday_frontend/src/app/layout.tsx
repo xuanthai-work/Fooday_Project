@@ -1,17 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { Outfit, Inter } from "next/font/google";
+import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import StyledJsxRegistry from "./registry";
 import AppShell from "@/components/AppShell";
 import "./globals.css";
 
-const outfit = Outfit({
-  subsets: ["latin"],
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin", "vietnamese"],
   variable: "--font-display",
   display: "swap",
 });
 
 const inter = Inter({
-  subsets: ["latin"],
+  subsets: ["latin", "vietnamese"],
   variable: "--font-sans",
   display: "swap",
 });
@@ -50,7 +50,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${outfit.variable} ${inter.variable}`}
+      className={`${plusJakartaSans.variable} ${inter.variable}`}
       suppressHydrationWarning
     >
       <head>

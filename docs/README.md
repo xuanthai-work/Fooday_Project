@@ -10,6 +10,13 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-21-remove-hashtag-pills-from-home-cards.md](tasks/2026-10-21-remove-hashtag-pills-from-home-cards.md) | Remove Hashtag Pills from Home Food Card Media | 2026-10-21 | ✅ PASS |
+| [2026-10-21-multi-hashtag-slug-standardization.md](tasks/2026-10-21-multi-hashtag-slug-standardization.md) | Multi-Hashtag System with Lowercase Unaccented Format (#slug) | 2026-10-21 | ✅ PASS |
+| [2026-10-21-vietnamese-typography-and-trending-hashtags.md](tasks/2026-10-21-vietnamese-typography-and-trending-hashtags.md) | Upgrade Vietnamese Typography (Plus Jakarta Sans) & Social-Style Hashtag System | 2026-10-21 | ✅ PASS |
+| [2026-10-21-refine-mood-pills-and-fix-scrollbar-artifact.md](tasks/2026-10-21-refine-mood-pills-and-fix-scrollbar-artifact.md) | Refine Mood Category Pills & Eliminate Container Scrollbar Artifacts | 2026-10-21 | ✅ PASS |
+| [2026-10-21-make-dish-autocomplete-dropdown-opaque.md](tasks/2026-10-21-make-dish-autocomplete-dropdown-opaque.md) | Make Dish Name Autocomplete Dropdown Opaque | 2026-10-21 | ✅ PASS |
+| [2026-10-21-smart-dish-name-autocomplete-combobox.md](tasks/2026-10-21-smart-dish-name-autocomplete-combobox.md) | Smart Dish Name Autocomplete Combobox ("Suggest-First, Create-Fallback") | 2026-10-21 | ✅ PASS |
+| [2026-10-21-make-empty-photo-upload-box-clickable.md](tasks/2026-10-21-make-empty-photo-upload-box-clickable.md) | Make Empty Photo Upload Box Clickable in AddDishModal and EditDishModal | 2026-10-21 | ✅ PASS |
 | [2026-10-21-update-review-cooldown-to-45-days.md](tasks/2026-10-21-update-review-cooldown-to-45-days.md) | Update Review Cooldown to 45 Days | 2026-10-21 | ✅ PASS |
 | [2026-10-21-fix-missing-json-import-chat-api.md](tasks/2026-10-21-fix-missing-json-import-chat-api.md) | Fix Missing JSON Import in Chat API (Fix AI Fallback Error) | 2026-10-21 | ✅ PASS |
 | [2026-10-21-auto-hide-bottom-nav-on-keyboard-focus.md](tasks/2026-10-21-auto-hide-bottom-nav-on-keyboard-focus.md) | Auto-Hide Bottom Navigation Bar on Mobile Keyboard Focus (ChatView) | 2026-10-21 | ✅ PASS |

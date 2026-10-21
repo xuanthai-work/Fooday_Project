@@ -228,7 +228,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                     priority={index < 4}
                   />
                   {item.name && <span className="card-type-tag">{item.name}</span>}
-                  {item.tag && <span className="card-tag glass">{item.tag}</span>}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -410,27 +409,31 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         }
         .mood-categories {
           display: flex;
-          gap: 9px;
+          gap: 8px;
           overflow-x: auto;
-          padding-bottom: 6px;
-          margin-bottom: 22px;
+          padding: 2px 2px 8px;
+          margin-bottom: 18px;
+          -ms-overflow-style: none;
           scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
         }
         .mood-categories::-webkit-scrollbar {
           display: none;
+          width: 0;
+          height: 0;
         }
         .chip {
           flex-shrink: 0;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-height: 44px;
-          padding: 0 18px;
+          min-height: 34px;
+          padding: 5px 12px;
           border-radius: var(--r-full);
           border: 1px solid var(--border);
           background: var(--surface-2);
           color: var(--text-soft);
-          font-size: 0.875rem;
+          font-size: 0.8125rem;
           font-weight: 600;
           cursor: pointer;
           white-space: nowrap;
@@ -439,10 +442,10 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
             box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
         }
         .mood-chip {
-          gap: 7px;
+          gap: 5px;
         }
         .mood-icon {
-          font-size: 1rem;
+          font-size: 0.9375rem;
           line-height: 1;
         }
         .chip:hover:not(.active) {
@@ -547,7 +550,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           top: 8px;
           left: 8px;
           z-index: 2;
-          font-size: 0.75rem;
+          font-size: 0.6875rem;
           font-weight: 700;
           color: var(--primary-strong);
           background: color-mix(in srgb, var(--surface) 88%, var(--primary) 12%);
@@ -555,12 +558,12 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           -webkit-backdrop-filter: blur(8px);
           border: 1px solid var(--primary-soft-2);
           border-radius: var(--r-full);
-          padding: 4px 10px;
+          padding: 3px 8px;
           max-width: calc(100% - 64px);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10), 0 0 12px var(--primary-soft);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
           pointer-events: none;
         }
         :global(:root[data-theme="dark"]) .card-type-tag {
@@ -574,26 +577,6 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
             color: var(--primary);
             border-color: var(--primary-soft-2);
           }
-        }
-        .card-tag {
-          position: absolute;
-          top: 8px;
-          left: 8px;
-          z-index: 2;
-          font-size: 0.65rem;
-          font-weight: 700;
-          letter-spacing: 0.02em;
-          color: var(--text);
-          padding: 4px 8px;
-          border-radius: var(--r-full);
-          border: 1px solid rgba(255, 255, 255, 0.5);
-          white-space: nowrap;
-          max-width: calc(100% - 60px);
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .card-type-tag + .card-tag {
-          top: 38px;
         }
         .fav {
           position: absolute;

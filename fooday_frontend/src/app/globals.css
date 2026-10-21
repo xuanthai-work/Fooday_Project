@@ -1,7 +1,7 @@
 /* =========================================================
    Fooday — Premium Design System
    Light-first theme with system + manual dark mode.
-   Fonts (--font-display: Outfit, --font-sans: Inter) are
+   Fonts (--font-display: Plus Jakarta Sans, --font-sans: Inter) are
    injected by next/font on <html>; consumed below.
    ========================================================= */
 
@@ -233,6 +233,15 @@ textarea,
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
+}
+
+/* ---- Mood category rail: hide the horizontal scrollbar entirely ----
+   styled-jsx scoped rules can't reliably target ::-webkit-scrollbar, so the
+   rule lives globally to avoid a scrollbar strip rendering under the pills. */
+.mood-categories::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* =========================================================

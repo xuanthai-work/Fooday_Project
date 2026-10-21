@@ -2,12 +2,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { X, Upload, Star, Loader2, Sparkles } from 'lucide-react';
+import { X, Upload, Star, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { refreshFoods, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
 import { dishImageService, DishImage } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
+import { TRENDING_HASHTAGS, normalizeSingleHashtag, serializeHashtags } from '@/lib/hashtags';
+import DishNameAutocomplete from './DishNameAutocomplete';
+
+export { TRENDING_HASHTAGS };
 
 const slugify = (s: string) =>
   s
@@ -27,7 +31,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [category, setCategory] = useState<FoodCategory>('Foods');
   const [restaurant, setRestaurant] = useState('');
   const [rating, setRating] = useState(5);
-  const [tag, setTag] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
   const [imageList, setImageList] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<DishImage[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -104,12 +109,35 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const canSubmit =
     Boolean(name.trim() && restaurant.trim() && imageList.length > 0) && !busy;
 
+  const handleAddTag = (raw: string) => {
+    const normalized = normalizeSingleHashtag(raw);
+    setTagInput('');
+    if (!normalized) return;
+    setSelectedTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+  };
+
+  const handleTogglePreset = (preset: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(preset) ? prev.filter((item) => item !== preset) : [...prev, preset],
+    );
+  };
+
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+      e.preventDefault();
+      handleAddTag(tagInput);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
     const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 8)}`;
+    const finalTag = serializeHashtags(
+      tagInput.trim() ? [...selectedTags, tagInput] : selectedTags,
+    );
     const { error: insErr } = await supabase.from('foods').insert({
       slug,
       name: name.trim(),
@@ -118,7 +146,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       rating,
       image_url: imageList[0] || '',
       images: imageList,
-      tag: tag.trim() || null,
+      tag: finalTag || null,
     });
     if (insErr) {
       setError(insErr.message);
@@ -182,10 +210,19 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                 </button>
               </div>
             ) : (
-              <div className="preview-empty">
-                <Sparkles size={20} />
-                <span>{t.addDish.pasteHint}</span>
-              </div>
+              <button
+                type="button"
+                className="preview-empty"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <Loader2 size={22} className="spin" />
+                ) : (
+                  <Upload size={22} />
+                )}
+                <span>{uploading ? t.addDish.uploading : t.addDish.pasteHint}</span>
+              </button>
             )}
 
             <input
@@ -215,15 +252,16 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           </div>
 
           {/* Name */}
-          <label className="field">
+          <div className="field">
             <span className="label">{t.addDish.dishNameLabel}</span>
-            <input
+            <DishNameAutocomplete
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={setName}
               placeholder={t.addDish.dishNamePlaceholder}
               required
+              aria-label={t.addDish.dishNameLabel}
             />
-          </label>
+          </div>
 
           {/* Category */}
           <div className="field">
@@ -275,15 +313,67 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             </div>
           </div>
 
-          {/* Tag */}
-          <label className="field">
+          {/* Tags — multi-select presets + custom hashtag input */}
+          <div className="field">
             <span className="label">{t.addDish.tagLabel}</span>
-            <input
-              value={tag}
-              onChange={(e) => setTag(e.target.value)}
-              placeholder={t.addDish.tagPlaceholder}
-            />
-          </label>
+
+            {selectedTags.length > 0 && (
+              <div className="selected-tags">
+                {selectedTags.map((selected) => (
+                  <span key={selected} className="selected-tag-chip">
+                    {selected}
+                    <button
+                      type="button"
+                      className="remove-tag-btn"
+                      onClick={() =>
+                        setSelectedTags((prev) => prev.filter((item) => item !== selected))
+                      }
+                      aria-label={`Remove ${selected}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="tag-input-row">
+              <input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={handleTagKeyDown}
+                placeholder={t.addDish.tagPlaceholder}
+                aria-label={t.addDish.tagLabel}
+              />
+              <button
+                type="button"
+                className="tag-add-btn"
+                onClick={() => handleAddTag(tagInput)}
+              >
+                {t.addDish.addTag}
+              </button>
+            </div>
+
+            <div className="hashtag-presets">
+              <span className="hashtag-presets-label">{t.addDish.trendingHashtagsLabel}</span>
+              <div className="hashtag-chips">
+                {TRENDING_HASHTAGS.map((preset) => {
+                  const isSelected = selectedTags.includes(preset);
+                  return (
+                    <button
+                      type="button"
+                      key={preset}
+                      className={`hashtag-chip ${isSelected ? 'active' : ''}`}
+                      onClick={() => handleTogglePreset(preset)}
+                      aria-pressed={isSelected}
+                    >
+                      {preset}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
 
           {error && <div className="error">{error}</div>}
 
@@ -441,14 +531,29 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          min-height: 92px;
-          padding: 12px;
+          min-height: 96px;
+          width: 100%;
+          padding: 16px;
           border-radius: var(--r-md);
           border: 1.5px dashed var(--border-strong);
           background: var(--surface-2);
-          color: var(--text-faint);
-          font-size: 13px;
+          color: var(--text-soft);
+          font-size: 13.5px;
+          font-weight: 600;
           text-align: center;
+          cursor: pointer;
+          transition: border-color var(--dur-fast) var(--ease),
+            color var(--dur-fast) var(--ease),
+            background var(--dur-fast) var(--ease);
+        }
+        .preview-empty:hover:not(:disabled) {
+          border-color: var(--primary);
+          color: var(--primary-strong);
+          background: var(--surface-3);
+        }
+        .preview-empty:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
         .thumb-img { object-fit: cover; }
         .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -497,6 +602,111 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
         }
         .stars { display: flex; gap: 4px; }
         .star { background: none; border: none; padding: 2px; cursor: pointer; line-height: 0; }
+        .hashtag-presets {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin-top: 3px;
+        }
+        .hashtag-presets-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--text-faint);
+          letter-spacing: 0.01em;
+        }
+        .hashtag-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .hashtag-chip {
+          height: 24px;
+          padding: 3px 8px;
+          display: inline-flex;
+          align-items: center;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          color: var(--text-soft);
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1;
+          white-space: nowrap;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease);
+        }
+        .hashtag-chip:hover {
+          transform: translateY(-1px);
+          border-color: var(--primary);
+          color: var(--primary-strong);
+        }
+        .hashtag-chip.active {
+          background: var(--grad-primary);
+          border-color: var(--primary);
+          color: var(--primary-contrast);
+          box-shadow: var(--shadow-primary);
+        }
+        .selected-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 8px;
+        }
+        .selected-tag-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 3px 8px;
+          border-radius: var(--r-full);
+          background: var(--primary-soft-2);
+          color: var(--primary-strong);
+          border: 1px solid var(--primary-soft);
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+        .remove-tag-btn {
+          border: none;
+          background: transparent;
+          color: var(--primary-strong);
+          font-size: 14px;
+          line-height: 1;
+          padding: 0;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+          transition: color var(--dur-fast) var(--ease);
+        }
+        .remove-tag-btn:hover { color: var(--heart); }
+        .tag-input-row {
+          display: flex;
+          gap: 6px;
+        }
+        .tag-input-row input {
+          flex: 1;
+          min-width: 0;
+        }
+        .tag-add-btn {
+          flex-shrink: 0;
+          height: 44px;
+          padding: 0 14px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+          font-family: inherit;
+          font-size: 13.5px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .tag-add-btn:hover {
+          background: var(--primary-soft-2);
+          border-color: var(--primary);
+        }
         .error {
           padding: 10px 12px;
           border-radius: var(--r-md);

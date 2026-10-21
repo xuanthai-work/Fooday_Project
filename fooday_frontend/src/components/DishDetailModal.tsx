@@ -10,6 +10,7 @@ import { useFavorites } from '@/hooks/useFavorites';
 import { useAuth } from '@/hooks/useAuth';
 import { useReviews } from '@/hooks/useReviews';
 import { useTranslation } from '@/i18n/LanguageContext';
+import { parseHashtags } from '@/lib/hashtags';
 import EditDishModal from './EditDishModal';
 
 interface DishDetailModalProps {
@@ -57,6 +58,7 @@ export default function DishDetailModal({
   }, []);
 
   const isFav = favorites.has(currentDish.id);
+  const hashtags = parseHashtags(currentDish.tag);
   const seededRating = Number(currentDish.rating ?? 0);
   const rating = totalCount > 0 ? averageRating : seededRating;
   const images: string[] =
@@ -343,7 +345,15 @@ export default function DishDetailModal({
             </div>
           </div>
 
-          {currentDish.tag && <span className="detail-tag">{currentDish.tag}</span>}
+          {hashtags.length > 0 && (
+            <div className="detail-tags">
+              {hashtags.map((h) => (
+                <span key={h} className="detail-tag">
+                  {h}
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="info-list">
             <a
@@ -855,9 +865,15 @@ export default function DishDetailModal({
           font-weight: 700;
           color: var(--text);
         }
+        .detail-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin: 8px 0 16px;
+        }
         .detail-tag {
-          display: inline-block;
-          margin-top: 10px;
+          display: inline-flex;
+          align-items: center;
           padding: 4px 10px;
           border-radius: var(--r-full);
           background: var(--primary-soft);
