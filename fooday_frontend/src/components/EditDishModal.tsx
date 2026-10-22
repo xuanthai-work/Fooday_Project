@@ -25,22 +25,43 @@ interface EditDishModalProps {
 
 /**
  * GitHub-style contributor list of a dish: everybody who edited it besides
- * its creator. The creator keeps living in `created_by`.
+ * its creator. The creator keeps living in `created_by` and is stored as the
+ * first entry of the list with the `creator` role.
  */
 function buildContributors(dish: Food, user: User | null): Contributor[] {
   const list = parseContributors(dish.contributors);
   if (!user) return list;
-  // The creator never shows up as a contributor of their own dish.
-  if (dish.created_by && dish.created_by === user.id) return list;
+
+  const index = list.findIndex((contributor) => contributor.id === user.id);
+
+  // The author of the dish never turns into a plain contributor of their own
+  // dish — their entry keeps the `creator` role and their stored details.
+  if (dish.created_by && dish.created_by === user.id) {
+    if (index === -1) {
+      return [
+        ...list,
+        {
+          id: user.id,
+          name: user.email?.split('@')[0] || 'User',
+          avatar_url: (user.user_metadata?.avatar_url as string | undefined) || '',
+          updated_at: new Date().toISOString(),
+          role: 'creator' as const,
+        },
+      ];
+    }
+    const next = [...list];
+    next[index] = { ...next[index], role: 'creator' };
+    return next;
+  }
 
   const entry: Contributor = {
     id: user.id,
     name: user.email?.split('@')[0] || 'User',
     avatar_url: (user.user_metadata?.avatar_url as string | undefined) || '',
     updated_at: new Date().toISOString(),
+    role: 'contributor',
   };
 
-  const index = list.findIndex((contributor) => contributor.id === user.id);
   if (index === -1) return [...list, entry];
   const next = [...list];
   next[index] = { ...next[index], ...entry };

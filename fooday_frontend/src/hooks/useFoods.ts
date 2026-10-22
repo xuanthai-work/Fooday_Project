@@ -24,12 +24,17 @@ export interface Branch {
   lng?: number | null; // Kinh độ (bóc tách từ link Google Maps)
 }
 
+/** The role of a person inside the `contributors` list of a dish. */
+export type ContributorRole = 'creator' | 'contributor';
+
 /** Someone who helped build a dish (the creator lives in `created_by`). */
 export interface Contributor {
   id: string;
   name: string;
   avatar_url?: string;
   updated_at?: string;
+  /** `creator` = the author of the dish, `contributor` = somebody who edited it. */
+  role?: ContributorRole;
 }
 
 export interface Food {
@@ -87,6 +92,10 @@ export function parseContributors(value: unknown): Contributor[] {
         typeof item.avatar_url === 'string' ? item.avatar_url : undefined,
       updated_at:
         typeof item.updated_at === 'string' ? item.updated_at : undefined,
+      role:
+        item.role === 'creator'
+          ? ('creator' as const)
+          : ('contributor' as const),
     }))
     .filter((item) => Boolean(item.id));
 }

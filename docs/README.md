@@ -10,6 +10,7 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-22-inline-contributors-avatar-stack-and-ordered-modal.md](tasks/2026-10-22-inline-contributors-avatar-stack-and-ordered-modal.md) | Inline Contributors Avatar Stack & Ordered Contributor Modal | 2026-10-22 | ✅ PASS |
 | [2026-10-22-community-editing-contributors-and-form-ux-optimization.md](tasks/2026-10-22-community-editing-contributors-and-form-ux-optimization.md) | Community Editing, GitHub-Style Contributors & Form UX Optimization | 2026-10-22 | ✅ PASS |
 | [2026-10-22-guest-favorite-auth-prompt-and-review-points.md](tasks/2026-10-22-guest-favorite-auth-prompt-and-review-points.md) | Guest Favorite Auth Prompt & Review Photos Gamification Points System | 2026-10-22 | ✅ PASS |
 | [2026-10-22-upgrade-foodie-ai-agent-v2.md](tasks/2026-10-22-upgrade-foodie-ai-agent-v2.md) | Upgrade Foodie AI 2.0 (Tools, Multi-Turn Memory, GPS Awareness & Rich Chat Cards) | 2026-10-22 | ✅ PASS |

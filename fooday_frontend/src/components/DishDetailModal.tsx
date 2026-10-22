@@ -16,9 +16,10 @@ import {
   Pencil,
   UtensilsCrossed,
   ChevronDown,
+  Crown,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import type { Food } from '@/hooks/useFoods';
+import type { Contributor, Food } from '@/hooks/useFoods';
 import { parseContributors } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useAuth } from '@/hooks/useAuth';
@@ -40,6 +41,15 @@ interface DishDetailModalProps {
   dish: Food;
   onClose: () => void;
   onNavigateToChat: (msg: string) => void;
+}
+
+/** How many avatars fit in the little stack next to the dish name. */
+const STACK_LIMIT = 5;
+
+/** Timestamp of a contribution — entries without one are sorted last. */
+function contributionTime(item: Contributor): number {
+  const time = item.updated_at ? new Date(item.updated_at).getTime() : NaN;
+  return Number.isFinite(time) ? time : 0;
 }
 
 export default function DishDetailModal({
@@ -70,6 +80,7 @@ export default function DishDetailModal({
   const fileRef = useRef<HTMLInputElement>(null);
   const [activeImgIndex, setActiveImgIndex] = useState(0);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [showContributorsModal, setShowContributorsModal] = useState(false);
   const closingRef = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
@@ -171,13 +182,51 @@ export default function DishDetailModal({
     () => parseContributors(currentDish.contributors),
     [currentDish.contributors],
   );
-  // The creator only shows up in the contributor list when they edited the
-  // dish later on — otherwise they stay anonymous ("Fooday community").
-  const creator = useMemo(
-    () => contributors.find((item) => item.id === currentDish.created_by) ?? null,
+  // The author of the dish is stored as the first entry of the list (role
+  // `creator`); on older rows the author only lives in `created_by`.
+  const creator = useMemo(() => {
+    const byRole = contributors.find((item) => item.role === 'creator');
+    if (byRole) return byRole;
+    if (!currentDish.created_by) return null;
+    return contributors.find((item) => item.id === currentDish.created_by) ?? null;
+  }, [contributors, currentDish.created_by]);
+  // Everybody else who helped — the most recent contribution comes first.
+  const helperContributors = useMemo(
+    () =>
+      contributors
+        .filter((item) => item.role !== 'creator')
+        .filter((item) => item.id !== currentDish.created_by)
+        .sort((a, b) => contributionTime(b) - contributionTime(a)),
     [contributors, currentDish.created_by],
   );
-  const creatorName = creator?.name || t.detail.community;
+  const isCreatorSelf = Boolean(
+    user && currentDish.created_by && currentDish.created_by === user.id,
+  );
+  const creatorName = isCreatorSelf
+    ? user?.email?.split('@')[0] || t.detail.community
+    : creator?.name || t.detail.community;
+  const creatorAvatar =
+    creator?.avatar_url ||
+    (isCreatorSelf ? (user?.user_metadata?.avatar_url as string | undefined) || '' : '');
+  // The little stack next to the dish name: the author first, then the others.
+  const stackItems = useMemo(
+    () => [
+      {
+        id: creator?.id || 'fooday-community',
+        name: creatorName,
+        avatar_url: creatorAvatar || undefined,
+        isCreator: true,
+      },
+      ...helperContributors.map((item) => ({
+        id: item.id,
+        name: item.name,
+        avatar_url: item.avatar_url,
+        isCreator: false,
+      })),
+    ],
+    [creator, creatorName, creatorAvatar, helperContributors],
+  );
+  const stackOverflow = Math.max(0, stackItems.length - STACK_LIMIT);
 
   const formatCooldownDate = (date: Date) =>
     date.toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', {
@@ -201,6 +250,11 @@ export default function DishDetailModal({
         setLightboxSrc(null);
         return;
       }
+      // The contributor list owns the Escape key while it is open.
+      if (showContributorsModal) {
+        setShowContributorsModal(false);
+        return;
+      }
       // The sign-in prompt owns the Escape key while it is open.
       if (showAuthPrompt) return;
       if (!isEditing) handleClose();
@@ -212,7 +266,7 @@ export default function DishDetailModal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [handleClose, isEditing, lightboxSrc, showAuthPrompt]);
+  }, [handleClose, isEditing, lightboxSrc, showAuthPrompt, showContributorsModal]);
 
   useEffect(() => {
     if (!loginHint) return;
@@ -576,10 +630,52 @@ export default function DishDetailModal({
             <div className="detail-head">
               <div className="detail-head-text">
                 <h2 className="detail-title">{currentDish.restaurant}</h2>
-                <p className="detail-sub">
-                  <UtensilsCrossed size={14} />
-                  <span>{currentDish.name}</span>
-                </p>
+                <div className="detail-sub-row">
+                  <p className="detail-sub">
+                    <UtensilsCrossed size={14} />
+                    <span>{currentDish.name}</span>
+                  </p>
+                  {/* The people who built this dish — opens the full list. */}
+                  <button
+                    type="button"
+                    className="stack-trigger"
+                    onClick={() => setShowContributorsModal(true)}
+                    aria-label={t.detail.contributors}
+                    title={t.detail.contributors}
+                    aria-haspopup="dialog"
+                  >
+                    <span className="avatar-stack">
+                      {stackItems.slice(0, STACK_LIMIT).map((item) => (
+                        <span key={item.id} className="stack-avatar">
+                          {item.avatar_url ? (
+                            <Image
+                              src={item.avatar_url}
+                              alt=""
+                              fill
+                              sizes="26px"
+                              className="stack-avatar-img"
+                              style={{ objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <span className="stack-initial">
+                              {(item.name[0] || '?').toUpperCase()}
+                            </span>
+                          )}
+                          {item.isCreator && (
+                            <span className="stack-crown" aria-hidden="true">
+                              <Crown size={9} />
+                            </span>
+                          )}
+                        </span>
+                      ))}
+                    </span>
+                    {stackOverflow > 0 && (
+                      <span className="stack-more" aria-hidden="true">
+                        +{stackOverflow}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
               <div className="detail-head-actions">
                 <button className="ask-ai-pill" onClick={handleAsk}>
@@ -721,61 +817,6 @@ export default function DishDetailModal({
                 </div>
               )}
             </div>
-
-            {/* Contributors — the people who built this dish */}
-            <section className="contributors">
-              <div className="creator-row">
-                <span className="creator-crown" aria-hidden="true">
-                  {creator?.avatar_url ? (
-                    <Image
-                      src={creator.avatar_url}
-                      alt=""
-                      fill
-                      sizes="30px"
-                      className="stack-avatar-img"
-                      style={{ objectFit: 'cover' }}
-                    />
-                  ) : (
-                    '👑'
-                  )}
-                </span>
-                <div className="creator-text">
-                  <span className="creator-label">{t.detail.createdBy}</span>
-                  <span className="creator-name">{creatorName}</span>
-                </div>
-              </div>
-
-              {contributors.length > 0 && (
-                <div className="contributor-row">
-                  <div className="avatar-stack" aria-hidden="true">
-                    {contributors.slice(0, 6).map((contributor) => (
-                      <span key={contributor.id} className="stack-avatar">
-                        {contributor.avatar_url ? (
-                          <Image
-                            src={contributor.avatar_url}
-                            alt=""
-                            fill
-                            sizes="30px"
-                            className="stack-avatar-img"
-                            style={{ objectFit: 'cover' }}
-                          />
-                        ) : (
-                          <span className="stack-initial">
-                            {(contributor.name[0] || '?').toUpperCase()}
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="contributor-text">
-                    <span className="contributor-label">{t.detail.contributors}</span>
-                    <span className="contributor-names">
-                      {contributors.map((contributor) => contributor.name).join(', ')}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </section>
 
             {/* Reviews & comments */}
             <section className="reviews">
@@ -980,6 +1021,106 @@ export default function DishDetailModal({
               sizes="(max-width: 640px) 92vw, 900px"
               style={{ objectFit: 'contain' }}
             />
+          </div>
+        </div>
+      )}
+
+      {showContributorsModal && (
+        <div
+          className="contrib-backdrop"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowContributorsModal(false);
+          }}
+        >
+          <div
+            className="contrib-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t.detail.contributors}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="contrib-head">
+              <h3 className="contrib-title">{t.detail.contributors}</h3>
+              <button
+                type="button"
+                className="contrib-close"
+                onClick={() => setShowContributorsModal(false)}
+                aria-label={t.detail.close}
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            <ul className="contrib-list">
+              {/* The author always comes first. */}
+              <li className="contrib-item">
+                <span className="contrib-avatar">
+                  {creatorAvatar ? (
+                    <Image
+                      src={creatorAvatar}
+                      alt=""
+                      fill
+                      sizes="36px"
+                      className="contrib-avatar-img"
+                      style={{ objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <span className="contrib-initial">
+                      {(creatorName[0] || 'F').toUpperCase()}
+                    </span>
+                  )}
+                  <span className="contrib-crown" aria-hidden="true">
+                    <Crown size={10} />
+                  </span>
+                </span>
+                <span className="contrib-text">
+                  <span className="contrib-name">
+                    {creatorName}
+                    {isCreatorSelf && (
+                      <span className="contrib-you">{t.detail.you}</span>
+                    )}
+                  </span>
+                  <span className="contrib-role">{t.detail.createdBy}</span>
+                </span>
+                {creator?.updated_at && (
+                  <span className="contrib-time">{formatTime(creator.updated_at)}</span>
+                )}
+              </li>
+
+              {helperContributors.map((item) => (
+                <li key={item.id} className="contrib-item">
+                  <span className="contrib-avatar">
+                    {item.avatar_url ? (
+                      <Image
+                        src={item.avatar_url}
+                        alt=""
+                        fill
+                        sizes="36px"
+                        className="contrib-avatar-img"
+                        style={{ objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <span className="contrib-initial">
+                        {(item.name[0] || '?').toUpperCase()}
+                      </span>
+                    )}
+                  </span>
+                  <span className="contrib-text">
+                    <span className="contrib-name">
+                      {item.name}
+                      {item.id === user?.id && (
+                        <span className="contrib-you">{t.detail.you}</span>
+                      )}
+                    </span>
+                    <span className="contrib-role">{t.detail.contributors}</span>
+                  </span>
+                  {item.updated_at && (
+                    <span className="contrib-time">{formatTime(item.updated_at)}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       )}
@@ -1362,19 +1503,27 @@ export default function DishDetailModal({
           line-height: 1.15;
           word-break: break-word;
         }
+        /* The dish name and the contributor stack share the same line. */
+        .detail-sub-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 4px;
+        }
         .detail-sub {
           display: flex;
           align-items: center;
           gap: 5px;
+          flex: 1;
+          min-width: 0;
           font-size: 0.9375rem;
           color: var(--text-soft);
-          margin-top: 4px;
         }
         .detail-sub :global(svg) {
           flex-shrink: 0;
           color: var(--primary-strong);
         }
-        .detail-sub span {
+        .detail-sub > span {
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -1455,60 +1604,25 @@ export default function DishDetailModal({
           line-height: 1.45;
           word-break: break-word;
         }
-        /* Contributors — the creator badge and the avatar stack */
-        .contributors {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          margin-top: 14px;
-          padding: 12px;
-          border-radius: var(--r-md);
-          border: 1px solid var(--border);
-          background: var(--surface-2);
-        }
-        .creator-row {
-          display: flex;
+        /* The contributor stack next to the dish name. */
+        .stack-trigger {
+          display: inline-flex;
           align-items: center;
-          gap: 10px;
-        }
-        .creator-crown {
-          position: relative;
-          display: grid;
-          place-items: center;
-          width: 30px;
-          height: 30px;
+          gap: 4px;
           flex-shrink: 0;
+          padding: 2px;
+          border: none;
           border-radius: var(--r-full);
-          background: var(--primary-soft);
-          overflow: hidden;
-          font-size: 14px;
-          line-height: 1;
+          background: none;
+          cursor: pointer;
+          transition: transform var(--dur-fast) var(--ease);
         }
-        .creator-text {
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
-          min-width: 0;
+        .stack-trigger:hover {
+          transform: translateY(-1px);
         }
-        .creator-label {
-          font-size: 0.6875rem;
-          font-weight: 700;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          color: var(--text-faint);
-        }
-        .creator-name {
-          font-size: 0.875rem;
-          font-weight: 700;
-          color: var(--text);
-          word-break: break-word;
-        }
-        .contributor-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding-top: 10px;
-          border-top: 1px dashed var(--border-strong);
+        .stack-trigger:focus-visible {
+          outline: 2px solid var(--primary);
+          outline-offset: 2px;
         }
         .avatar-stack {
           display: flex;
@@ -1519,15 +1633,14 @@ export default function DishDetailModal({
           position: relative;
           display: grid;
           place-items: center;
-          width: 30px;
-          height: 30px;
-          margin-left: -8px;
+          width: 26px;
+          height: 26px;
+          margin-left: -9px;
           border-radius: var(--r-full);
-          border: 2px solid var(--surface-2);
-          overflow: hidden;
+          border: 2px solid var(--surface);
           background: var(--primary-soft-2);
           color: var(--primary-strong);
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 800;
           line-height: 1;
         }
@@ -1536,25 +1649,192 @@ export default function DishDetailModal({
         }
         .stack-avatar-img {
           object-fit: cover;
+          border-radius: var(--r-full);
         }
-        .contributor-text {
+        .stack-initial {
+          display: grid;
+          place-items: center;
+          width: 100%;
+          height: 100%;
+          border-radius: var(--r-full);
+        }
+        .stack-crown {
+          position: absolute;
+          right: -4px;
+          bottom: -4px;
+          display: grid;
+          place-items: center;
+          width: 14px;
+          height: 14px;
+          border-radius: var(--r-full);
+          background: var(--surface);
+          color: var(--star);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+        }
+        .stack-more {
+          display: inline-grid;
+          place-items: center;
+          min-width: 24px;
+          height: 24px;
+          padding: 0 6px;
+          border-radius: var(--r-full);
+          border: 2px solid var(--surface);
+          background: var(--surface-2);
+          color: var(--text-soft);
+          font-size: 0.6875rem;
+          font-weight: 800;
+          line-height: 1;
+        }
+        /* The list of people who built the dish. */
+        .contrib-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 30;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: rgba(20, 14, 10, 0.55);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          animation: overlayIn 0.2s ease both;
+        }
+        .contrib-modal {
+          width: min(380px, 100%);
+          max-height: 76dvh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-xl);
+          box-shadow: var(--shadow-lg);
+          animation: modalZoomIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        .contrib-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 14px 16px;
+          border-bottom: 1px solid var(--border);
+        }
+        .contrib-title {
+          font-size: 1rem;
+          font-weight: 800;
+          color: var(--text);
+        }
+        .contrib-close {
+          display: grid;
+          place-items: center;
+          width: 32px;
+          height: 32px;
+          flex-shrink: 0;
+          border: none;
+          border-radius: var(--r-full);
+          background: var(--surface-2);
+          color: var(--text-soft);
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+        }
+        .contrib-close:hover {
+          background: var(--surface-3);
+          color: var(--text);
+        }
+        .contrib-list {
+          list-style: none;
+          margin: 0;
+          padding: 6px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+        }
+        .contrib-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px;
+          border-radius: var(--r-md);
+        }
+        .contrib-item + .contrib-item {
+          border-top: 1px solid var(--border);
+        }
+        .contrib-avatar {
+          position: relative;
+          display: grid;
+          place-items: center;
+          width: 36px;
+          height: 36px;
+          flex-shrink: 0;
+          border-radius: var(--r-full);
+          background: var(--primary-soft-2);
+          color: var(--primary-strong);
+          font-size: 0.875rem;
+          font-weight: 800;
+          line-height: 1;
+        }
+        .contrib-avatar-img {
+          object-fit: cover;
+          border-radius: var(--r-full);
+        }
+        .contrib-initial {
+          display: grid;
+          place-items: center;
+          width: 100%;
+          height: 100%;
+          border-radius: var(--r-full);
+        }
+        .contrib-crown {
+          position: absolute;
+          right: -3px;
+          bottom: -3px;
+          display: grid;
+          place-items: center;
+          width: 16px;
+          height: 16px;
+          border-radius: var(--r-full);
+          background: var(--surface);
+          color: var(--star);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+        }
+        .contrib-text {
+          flex: 1;
+          min-width: 0;
           display: flex;
           flex-direction: column;
           gap: 1px;
-          min-width: 0;
         }
-        .contributor-label {
+        .contrib-name {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.875rem;
+          font-weight: 700;
+          color: var(--text);
+          line-height: 1.3;
+          word-break: break-word;
+        }
+        .contrib-you {
+          padding: 1px 6px;
+          border-radius: var(--r-full);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+          font-size: 0.6875rem;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+        .contrib-role {
           font-size: 0.6875rem;
           font-weight: 700;
           letter-spacing: 0.04em;
           text-transform: uppercase;
           color: var(--text-faint);
         }
-        .contributor-names {
-          font-size: 0.8125rem;
-          color: var(--text-soft);
-          line-height: 1.4;
-          word-break: break-word;
+        .contrib-time {
+          flex-shrink: 0;
+          font-size: 0.75rem;
+          color: var(--text-faint);
+          white-space: nowrap;
         }
         .info-row-link {
           text-decoration: none;

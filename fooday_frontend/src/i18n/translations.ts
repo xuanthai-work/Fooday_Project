@@ -144,6 +144,7 @@ const vi = {
     createdBy: 'Người khởi tạo',
     contributors: 'Người đóng góp',
     community: 'Cộng đồng Fooday',
+    you: '(Bạn)',
     askPrompt: (dish: string, restaurant: string) =>
       `Cho mình hỏi về ${dish} ở ${restaurant}: quán có gì đặc biệt và hôm nay ăn có ổn không?`,
   },
@@ -430,6 +431,7 @@ const en: Translation = {
     createdBy: 'Created by',
     contributors: 'Contributors',
     community: 'Fooday community',
+    you: '(You)',
     askPrompt: (dish: string, restaurant: string) =>
       `Tell me about ${dish} at ${restaurant}: what's special about it and is it worth trying today?`,
   },

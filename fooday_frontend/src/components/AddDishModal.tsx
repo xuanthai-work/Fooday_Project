@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { X, Upload, Star, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
-import { refreshFoods, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
+import { refreshFoods, FoodCategory, FOOD_CATEGORIES, Contributor } from '@/hooks/useFoods';
 import { dishImageService, mapService, DishImage } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, serializeHashtags } from '@/lib/hashtags';
@@ -204,7 +204,20 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
         lng: branch.lng ?? null,
       }))
       .filter((branch) => branch.name || branch.address || branch.google_map_url);
-    const payload = {
+    // The author of the dish is stored as the first entry of the contributor
+    // list, so the detail modal can always show a real name and avatar.
+    const initialContributors: Contributor[] = user
+      ? [
+          {
+            id: user.id,
+            name: user.email?.split('@')[0] || 'User',
+            avatar_url: (user.user_metadata?.avatar_url as string | undefined) || '',
+            updated_at: new Date().toISOString(),
+            role: 'creator',
+          },
+        ]
+      : [];
+    const basePayload = {
       slug,
       name: name.trim(),
       category,
@@ -220,7 +233,13 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       // Only sent when there is something to store.
       ...(cleanBranches.length > 0 ? { branches: cleanBranches } : {}),
     };
-    const { error: insErr } = await supabase.from('foods').insert(payload);
+    const payload = { ...basePayload, contributors: initialContributors };
+    let { error: insErr } = await supabase.from('foods').insert(payload);
+    if (insErr && /contributors/i.test(insErr.message)) {
+      // The `contributors` column is not migrated yet — save without it.
+      const retry = await supabase.from('foods').insert(basePayload);
+      insErr = retry.error;
+    }
     if (insErr) {
       setError(insErr.message);
       setBusy(false);
