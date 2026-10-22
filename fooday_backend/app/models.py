@@ -64,3 +64,4 @@ class ParseMapResponse(BaseModel):
     restaurant_name: str | None = None
     address: str | None = None
     resolved_url: str | None = None
+    place_id: str | None = None

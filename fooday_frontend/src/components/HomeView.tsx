@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
 import { Search, Heart, Star, Sparkles, MapPin } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
@@ -111,6 +112,30 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const [selectedMood, setSelectedMood] = useState<MoodTaskCategory>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
+  const searchParams = useSearchParams();
+  const dishParam = searchParams.get('dish');
+  const handledDishParamRef = useRef<string | null>(null);
+
+  // Open a dish from anywhere: other views dispatch a custom event, and the
+  // AddDishModal duplicate flow uses the `?dish=<id>` query param so the
+  // detail opens even after navigating back to the home route.
+  useEffect(() => {
+    const onOpenDish = (event: Event) => {
+      const target = (event as CustomEvent<Food>).detail;
+      if (target) setSelectedDish(target);
+    };
+    window.addEventListener('fooday:open-dish', onOpenDish as EventListener);
+    return () => window.removeEventListener('fooday:open-dish', onOpenDish as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (!dishParam || handledDishParamRef.current === dishParam) return;
+    const target = foods.find((item) => String(item.id) === dishParam);
+    if (!target) return;
+    handledDishParamRef.current = dishParam;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the deep link into the modal state
+    setSelectedDish(target);
+  }, [dishParam, foods]);
 
   const currentMoodOption = MOOD_TASKS.find((m) => m.id === selectedMood) ?? MOOD_TASKS[0];
 

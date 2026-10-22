@@ -813,6 +813,37 @@ def _name_from_path(url: str) -> str | None:
     return None
 
 
+def _extract_place_id(url: str, html: str = "") -> str | None:
+    """Extract the unique Google Maps identifier of a place.
+
+    Google encodes a place either as a hex feature id (`!1s0x...:0x...`) or as
+    a numeric/hex `cid` query parameter. The same marker also shows up in the
+    `APP_INITIALIZATION_STATE` payload of the page, so the HTML is searched as
+    a fallback when the (possibly shortened) URL does not carry it.
+    """
+    sources = (url or "", html or "")
+    hex_pattern = re.compile(r"!1s(0x[0-9a-fA-F]+:0x[0-9a-fA-F]+)")
+    cid_pattern = re.compile(r"[?&]cid=([0-9a-fA-F]+|\d+)")
+    feature_pattern = re.compile(r"(0x[0-9a-fA-F]+:0x[0-9a-fA-F]+)")
+
+    for source in sources:
+        match = hex_pattern.search(source)
+        if match:
+            return match.group(1)
+
+    for source in sources:
+        match = cid_pattern.search(source)
+        if match:
+            return match.group(1)
+
+    # Last resort: the raw feature id inside the page script payload.
+    if html:
+        match = feature_pattern.search(html)
+        if match:
+            return match.group(1)
+    return None
+
+
 def _coords_from_url(url: str) -> tuple[float, float] | None:
     """Pull the place coordinates out of a Google Maps URL.
 
@@ -1020,9 +1051,11 @@ def parse_map_link(url: str = Query(..., min_length=1)) -> ParseMapResponse:
                 name = candidate
 
     address = _reverse_geocode(*coords) if coords else None
+    place_id = _extract_place_id(resolved_url, html) or _extract_place_id(raw)
 
     return ParseMapResponse(
         restaurant_name=name,
         address=address,
         resolved_url=resolved_url,
+        place_id=place_id,
     )

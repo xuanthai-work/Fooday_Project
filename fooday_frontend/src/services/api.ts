@@ -117,6 +117,7 @@ export interface ParsedMapInfo {
   restaurant_name?: string | null;
   address?: string | null;
   resolved_url?: string | null;
+  place_id?: string | null;
 }
 
 export const mapService = {

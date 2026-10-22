@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
         restaurant_name: null,
         address: null,
         resolved_url: null,
+        place_id: null,
       });
     }
 
@@ -33,12 +34,13 @@ export async function GET(req: NextRequest) {
       restaurant_name: null,
       address: null,
       resolved_url: null,
+      place_id: null,
     }));
     return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error('[BFF /api/parse-map-link error]:', error);
     return NextResponse.json(
-      { restaurant_name: null, address: null, resolved_url: null },
+      { restaurant_name: null, address: null, resolved_url: null, place_id: null },
       { status: 502 },
     );
   }

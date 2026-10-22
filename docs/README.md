@@ -10,6 +10,7 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-22-google-maps-place-deduplication-and-modal.md](tasks/2026-10-22-google-maps-place-deduplication-and-modal.md) | Google Maps Place Deduplication & Instant View Modal | 2026-10-22 | ✅ PASS |
 | [2026-10-22-align-contributors-stack-flush-right.md](tasks/2026-10-22-align-contributors-stack-flush-right.md) | Align Contributors Avatar Stack Flush Right & Expand Toward Center | 2026-10-22 | ✅ PASS |
 | [2026-10-22-inline-contributors-avatar-stack-and-ordered-modal.md](tasks/2026-10-22-inline-contributors-avatar-stack-and-ordered-modal.md) | Inline Contributors Avatar Stack & Ordered Contributor Modal | 2026-10-22 | ✅ PASS |
 | [2026-10-22-community-editing-contributors-and-form-ux-optimization.md](tasks/2026-10-22-community-editing-contributors-and-form-ux-optimization.md) | Community Editing, GitHub-Style Contributors & Form UX Optimization | 2026-10-22 | ✅ PASS |

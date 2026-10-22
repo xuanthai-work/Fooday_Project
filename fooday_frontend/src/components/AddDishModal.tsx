@@ -2,14 +2,22 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { X, Upload, Star, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
-import { refreshFoods, FoodCategory, FOOD_CATEGORIES, Contributor } from '@/hooks/useFoods';
-import { dishImageService, mapService, DishImage } from '@/services/api';
+import {
+  useFoods,
+  refreshFoods,
+  FoodCategory,
+  FOOD_CATEGORIES,
+  Contributor,
+  type Food,
+} from '@/hooks/useFoods';
+import { dishImageService, mapService, DishImage, ParsedMapInfo } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, serializeHashtags } from '@/lib/hashtags';
-import { isGoogleMapsUrl } from '@/lib/maps';
+import { isGoogleMapsUrl, extractPlaceId, mapsLinksMatch } from '@/lib/maps';
 import DishNameAutocomplete from './DishNameAutocomplete';
 import BranchEditor, { type BranchDraft } from './BranchEditor';
 
@@ -22,6 +30,31 @@ const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+/** Find an existing dish whose Google Maps place matches the parsed link. */
+function findDuplicateFood(
+  foods: Food[],
+  info: ParsedMapInfo,
+  rawUrl: string,
+): Food | null {
+  const placeId =
+    info.place_id?.toLowerCase() || extractPlaceId(info.resolved_url) || extractPlaceId(rawUrl);
+  const candidates = [info.resolved_url, rawUrl].filter(Boolean) as string[];
+
+  for (const food of foods) {
+    const links = [
+      food.google_map_url,
+      ...(food.branches ?? []).map((branch) => branch.google_map_url),
+    ];
+    for (const link of links) {
+      if (!link) continue;
+      if (placeId && extractPlaceId(link) === placeId) return food;
+      if (placeId && link.toLowerCase().includes(placeId)) return food;
+      if (candidates.some((candidate) => mapsLinksMatch(link, candidate))) return food;
+    }
+  }
+  return null;
+}
+
 interface AddDishModalProps {
   onClose: () => void;
 }
@@ -29,12 +62,16 @@ interface AddDishModalProps {
 export default function AddDishModal({ onClose }: AddDishModalProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { foods } = useFoods();
+  const router = useRouter();
   const [name, setName] = useState('');
   const [category, setCategory] = useState<FoodCategory>('Foods');
   const [restaurant, setRestaurant] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [address, setAddress] = useState('');
   const [isResolvingMap, setIsResolvingMap] = useState(false);
+  const [duplicateDish, setDuplicateDish] = useState<Food | null>(null);
+  const [showDuplicatePopup, setShowDuplicatePopup] = useState(false);
   const [openingTime, setOpeningTime] = useState('');
   const [reviewNote, setReviewNote] = useState('');
   const [rating, setRating] = useState(5);
@@ -48,14 +85,19 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Esc to close
+  // Esc to close (closes the duplicate warning first when it is open)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (showDuplicatePopup) {
+        setShowDuplicatePopup(false);
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, showDuplicatePopup]);
 
   // Unsplash suggestions by dish name (debounced). Auto-seed the gallery with the
   // first result until the user adds photos of their own.
@@ -82,9 +124,16 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   // name when it is still empty) automatically.
   const resolveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resolveSeqRef = useRef(0);
+  // Keep the latest catalog visible to the debounced resolver callback.
+  const foodsRef = useRef(foods);
+  useEffect(() => {
+    foodsRef.current = foods;
+  }, [foods]);
 
   const handleGoogleMapUrlChange = (value: string) => {
     setGoogleMapUrl(value);
+    setDuplicateDish(null);
+    setShowDuplicatePopup(false);
     resolveSeqRef.current += 1;
     if (resolveTimerRef.current) {
       clearTimeout(resolveTimerRef.current);
@@ -105,11 +154,33 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       if (seq !== resolveSeqRef.current) return;
       setIsResolvingMap(false);
       if (!info) return;
+
+      // The place already exists in the catalog: warn and stop the submission.
+      const existing = findDuplicateFood(foodsRef.current, info, url);
+      if (existing) {
+        setDuplicateDish(existing);
+        setShowDuplicatePopup(true);
+        return;
+      }
+
       if (info.address) setAddress(info.address);
       if (info.restaurant_name) {
         setRestaurant((prev) => (prev.trim() ? prev : (info.restaurant_name as string)));
       }
     }, 500);
+  };
+
+  // Close this form and jump straight to the dish that already exists.
+  const handleViewExisting = () => {
+    const target = duplicateDish;
+    if (!target) return;
+    setShowDuplicatePopup(false);
+    setDuplicateDish(null);
+    onClose();
+    window.dispatchEvent(new CustomEvent<Food>('fooday:open-dish', { detail: target }));
+    if (window.location.pathname !== '/') {
+      router.push(`/?dish=${target.id}`);
+    }
   };
 
   // Drop a pending resolution when the modal unmounts.
@@ -163,7 +234,9 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
         restaurant.trim() &&
         imageList.length > 0 &&
         isGoogleMapsUrl(googleMapUrl),
-    ) && !busy;
+    ) &&
+    !busy &&
+    !duplicateDish;
 
   const handleAddTag = (raw: string) => {
     const normalized = normalizeSingleHashtag(raw);
@@ -187,7 +260,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || duplicateDish) return;
     setBusy(true);
     setError(null);
     const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -537,6 +610,24 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             </div>
           </div>
 
+          {duplicateDish && !showDuplicatePopup && (
+            <div className="duplicate-inline" role="alert">
+              <span className="duplicate-inline-icon" aria-hidden="true">
+                📍
+              </span>
+              <span className="duplicate-inline-text">
+                {t.addDish.duplicateRestaurantDesc(duplicateDish.name, duplicateDish.restaurant)}
+              </span>
+              <button
+                type="button"
+                className="duplicate-inline-btn"
+                onClick={() => setShowDuplicatePopup(true)}
+              >
+                {t.addDish.viewExistingDishBtn}
+              </button>
+            </div>
+          )}
+
           {error && <div className="error">{error}</div>}
 
           <div className="actions">
@@ -549,6 +640,46 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           </div>
         </form>
       </div>
+
+      {duplicateDish && showDuplicatePopup && (
+        <div
+          className="duplicate-overlay"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowDuplicatePopup(false);
+          }}
+        >
+          <div
+            className="duplicate-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="duplicate-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="duplicate-icon" aria-hidden="true">
+              📍
+            </div>
+            <h3 id="duplicate-title" className="duplicate-title">
+              {t.addDish.duplicateRestaurantTitle}
+            </h3>
+            <p className="duplicate-desc">
+              {t.addDish.duplicateRestaurantDesc(duplicateDish.name, duplicateDish.restaurant)}
+            </p>
+            <div className="duplicate-actions">
+              <button
+                type="button"
+                className="duplicate-secondary"
+                onClick={() => setShowDuplicatePopup(false)}
+              >
+                {t.addDish.duplicateCloseBtn}
+              </button>
+              <button type="button" className="duplicate-primary" onClick={handleViewExisting}>
+                {t.addDish.viewExistingDishBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .overlay {
@@ -911,6 +1042,120 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           font-size: 13px;
           font-weight: 500;
         }
+        .duplicate-inline {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 10px 12px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+          font-size: 12.5px;
+          font-weight: 600;
+          line-height: 1.35;
+        }
+        .duplicate-inline-icon { flex-shrink: 0; font-size: 15px; line-height: 1; }
+        .duplicate-inline-text { flex: 1; min-width: 0; }
+        .duplicate-inline-btn {
+          flex-shrink: 0;
+          padding: 5px 9px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--surface);
+          color: var(--primary-strong);
+          font-family: inherit;
+          font-size: 11.5px;
+          font-weight: 700;
+          white-space: nowrap;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .duplicate-inline-btn:hover {
+          background: var(--primary-soft-2);
+          border-color: var(--primary);
+        }
+        .duplicate-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 70;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          background: rgba(20, 14, 10, 0.62);
+          backdrop-filter: blur(5px);
+          animation: fadeIn 0.18s var(--ease);
+        }
+        .duplicate-modal {
+          width: 100%;
+          max-width: 360px;
+          padding: 24px 22px 20px;
+          text-align: center;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-xl);
+          box-shadow: var(--shadow-lg);
+          animation: fadeInUp 0.26s var(--ease-out) both;
+        }
+        .duplicate-icon {
+          display: grid;
+          place-items: center;
+          width: 54px;
+          height: 54px;
+          margin: 0 auto 12px;
+          border-radius: var(--r-full);
+          background: var(--grad-primary);
+          font-size: 24px;
+          line-height: 1;
+          box-shadow: var(--shadow-primary);
+        }
+        .duplicate-title {
+          margin-bottom: 7px;
+          font-family: var(--font-display), sans-serif;
+          font-size: 18px;
+          font-weight: 800;
+          color: var(--text);
+          line-height: 1.2;
+        }
+        .duplicate-desc {
+          margin-bottom: 18px;
+          font-size: 13.5px;
+          font-weight: 500;
+          line-height: 1.45;
+          color: var(--text-soft);
+        }
+        .duplicate-actions {
+          display: flex;
+          gap: 9px;
+        }
+        .duplicate-secondary,
+        .duplicate-primary {
+          height: 44px;
+          border-radius: var(--r-md);
+          font-family: inherit;
+          font-size: 13.5px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: transform var(--dur-fast) var(--ease),
+            background var(--dur-fast) var(--ease);
+        }
+        .duplicate-secondary {
+          flex: 1;
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text-soft);
+        }
+        .duplicate-secondary:hover { background: var(--surface-3); }
+        .duplicate-primary {
+          flex: 1.5;
+          border: none;
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          box-shadow: var(--shadow-primary);
+        }
+        .duplicate-primary:active { transform: scale(0.98); }
         .actions { display: flex; gap: 10px; margin-top: 4px; }
         .cancel {
           flex: 1;

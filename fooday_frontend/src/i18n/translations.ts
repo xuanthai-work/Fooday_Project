@@ -246,6 +246,11 @@ const vi = {
     cancel: 'Hủy',
     submit: 'Thêm món',
     uploadFailed: 'Tải ảnh lên thất bại.',
+    duplicateRestaurantTitle: 'Quán này đã có trên Fooday!',
+    duplicateRestaurantDesc: (dish: string, restaurant: string) =>
+      `Quán ${restaurant} (món ${dish}) đã được thêm trên hệ thống.`,
+    viewExistingDishBtn: 'OK (Xem quán)',
+    duplicateCloseBtn: 'Đóng',
   },
   editDish: {
     title: 'Chỉnh sửa thông tin quán',
@@ -535,6 +540,11 @@ const en: Translation = {
     cancel: 'Cancel',
     submit: 'Add dish',
     uploadFailed: 'Upload failed.',
+    duplicateRestaurantTitle: 'This restaurant is already on Fooday!',
+    duplicateRestaurantDesc: (dish: string, restaurant: string) =>
+      `${restaurant} (dish: ${dish}) has already been added to the system.`,
+    viewExistingDishBtn: 'OK (View restaurant)',
+    duplicateCloseBtn: 'Close',
   },
   editDish: {
     title: 'Edit Restaurant & Dish',

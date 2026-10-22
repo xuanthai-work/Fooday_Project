@@ -1,9 +1,14 @@
 'use client';
 
+import { Suspense } from 'react';
 import HomeView from '@/components/HomeView';
 import { useAppNav } from '@/components/AppShell';
 
 export default function HomePage() {
   const { navigateToChat } = useAppNav();
-  return <HomeView onNavigateToChat={navigateToChat} />;
+  return (
+    <Suspense fallback={null}>
+      <HomeView onNavigateToChat={navigateToChat} />
+    </Suspense>
+  );
 }
