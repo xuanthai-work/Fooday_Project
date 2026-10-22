@@ -630,52 +630,6 @@ export default function DishDetailModal({
             <div className="detail-head">
               <div className="detail-head-text">
                 <h2 className="detail-title">{currentDish.restaurant}</h2>
-                <div className="detail-sub-row">
-                  <p className="detail-sub">
-                    <UtensilsCrossed size={14} />
-                    <span>{currentDish.name}</span>
-                  </p>
-                  {/* The people who built this dish — opens the full list. */}
-                  <button
-                    type="button"
-                    className="stack-trigger"
-                    onClick={() => setShowContributorsModal(true)}
-                    aria-label={t.detail.contributors}
-                    title={t.detail.contributors}
-                    aria-haspopup="dialog"
-                  >
-                    <span className="avatar-stack">
-                      {stackItems.slice(0, STACK_LIMIT).map((item) => (
-                        <span key={item.id} className="stack-avatar">
-                          {item.avatar_url ? (
-                            <Image
-                              src={item.avatar_url}
-                              alt=""
-                              fill
-                              sizes="26px"
-                              className="stack-avatar-img"
-                              style={{ objectFit: 'cover' }}
-                            />
-                          ) : (
-                            <span className="stack-initial">
-                              {(item.name[0] || '?').toUpperCase()}
-                            </span>
-                          )}
-                          {item.isCreator && (
-                            <span className="stack-crown" aria-hidden="true">
-                              <Crown size={9} />
-                            </span>
-                          )}
-                        </span>
-                      ))}
-                    </span>
-                    {stackOverflow > 0 && (
-                      <span className="stack-more" aria-hidden="true">
-                        +{stackOverflow}
-                      </span>
-                    )}
-                  </button>
-                </div>
               </div>
               <div className="detail-head-actions">
                 <button className="ask-ai-pill" onClick={handleAsk}>
@@ -687,6 +641,54 @@ export default function DishDetailModal({
                   {rating.toFixed(1)}
                 </span>
               </div>
+            </div>
+
+            {/* Full-width sub row: dish name on the left, contributors hugging the right edge. */}
+            <div className="detail-sub-row">
+              <p className="detail-sub">
+                <UtensilsCrossed size={14} />
+                <span>{currentDish.name}</span>
+              </p>
+              {/* The people who built this dish — opens the full list. */}
+              <button
+                type="button"
+                className="stack-trigger"
+                onClick={() => setShowContributorsModal(true)}
+                aria-label={t.detail.contributors}
+                title={t.detail.contributors}
+                aria-haspopup="dialog"
+              >
+                <span className="avatar-stack">
+                  {stackItems.slice(0, STACK_LIMIT).map((item) => (
+                    <span key={item.id} className="stack-avatar">
+                      {item.avatar_url ? (
+                        <Image
+                          src={item.avatar_url}
+                          alt=""
+                          fill
+                          sizes="26px"
+                          className="stack-avatar-img"
+                          style={{ objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <span className="stack-initial">
+                          {(item.name[0] || '?').toUpperCase()}
+                        </span>
+                      )}
+                      {item.isCreator && (
+                        <span className="stack-crown" aria-hidden="true">
+                          <Crown size={9} />
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </span>
+                {stackOverflow > 0 && (
+                  <span className="stack-more" aria-hidden="true">
+                    +{stackOverflow}
+                  </span>
+                )}
+              </button>
             </div>
 
             {hashtags.length > 0 && (
@@ -1503,19 +1505,23 @@ export default function DishDetailModal({
           line-height: 1.15;
           word-break: break-word;
         }
-        /* The dish name and the contributor stack share the same line. */
+        /* The dish name sits on the left, the contributor stack hugs the right edge. */
         .detail-sub-row {
           display: flex;
           align-items: center;
-          gap: 10px;
-          margin-top: 4px;
+          justify-content: space-between;
+          gap: 12px;
+          margin-top: 6px;
+          width: 100%;
         }
         .detail-sub {
           display: flex;
           align-items: center;
           gap: 5px;
-          flex: 1;
+          flex: 0 1 auto;
           min-width: 0;
+          flex-shrink: 1;
+          overflow: hidden;
           font-size: 0.9375rem;
           color: var(--text-soft);
         }
@@ -1608,7 +1614,9 @@ export default function DishDetailModal({
         .stack-trigger {
           display: inline-flex;
           align-items: center;
+          justify-content: flex-end;
           gap: 4px;
+          margin-left: auto;
           flex-shrink: 0;
           padding: 2px;
           border: none;
