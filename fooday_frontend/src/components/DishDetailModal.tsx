@@ -1,9 +1,22 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
-import { X, Heart, MapPin, Clock, Sparkles, Star, Share2, ExternalLink, ImagePlus, Pencil, UtensilsCrossed } from 'lucide-react';
+import {
+  X,
+  Heart,
+  MapPin,
+  Clock,
+  Sparkles,
+  Star,
+  Share2,
+  ExternalLink,
+  ImagePlus,
+  Pencil,
+  UtensilsCrossed,
+  ChevronDown,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import type { Food } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -11,6 +24,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { useReviews } from '@/hooks/useReviews';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { parseHashtags } from '@/lib/hashtags';
+import {
+  distanceToBranch,
+  findNearestBranch,
+  formatDistance,
+  getAllBranches,
+  resolveBranchCoords,
+  useUserLocation,
+} from '@/lib/geo';
 import EditDishModal from './EditDishModal';
 
 interface DishDetailModalProps {
@@ -78,12 +99,68 @@ export default function DishDetailModal({
     ? Math.min(activeImgIndex, images.length - 1)
     : 0;
   const isGuest = !user || Boolean(user.is_anonymous);
-  // Prefer the Google Maps link saved with the dish; fall back to a search query.
+
+  // --- Branches (multi-outlet restaurants) ---------------------------------
+  const { coords } = useUserLocation();
+  const branches = useMemo(
+    () => getAllBranches(currentDish, t.branches.mainBranch),
+    [currentDish, t.branches.mainBranch],
+  );
+  // Bumped whenever a shortened Maps link is expanded into real coordinates,
+  // so the distance computation runs again with the fresh data.
+  const [coordsRevision, setCoordsRevision] = useState(0);
+  const nearest = useMemo(
+    () => {
+      // Reading the revision keeps the memo honest about its dependencies.
+      void coordsRevision;
+      return findNearestBranch(branches, coords);
+    },
+    [branches, coords, coordsRevision],
+  );
+  const [selectedBranchIndex, setSelectedBranchIndex] = useState<number | null>(null);
+  const [branchListOpen, setBranchListOpen] = useState(false);
+
+  // The closest outlet wins by default; a manual pick always wins over it.
+  const activeIndex =
+    selectedBranchIndex !== null && selectedBranchIndex < branches.length
+      ? selectedBranchIndex
+      : (nearest?.index ?? 0);
+  const activeBranch = branches[activeIndex] ?? null;
+  const activeDistanceKm = activeBranch ? distanceToBranch(activeBranch, coords) : null;
+  const activeIsNearest = nearest !== null && nearest.index === activeIndex;
+
+  // The outlet shown above never repeats inside the list — the switcher only
+  // offers the *other* branches.
+  const otherBranches = useMemo(
+    () =>
+      branches
+        .map((branch, index) => ({ branch, index }))
+        .filter((item) => item.index !== activeIndex),
+    [branches, activeIndex],
+  );
+
+  // The shortened Google Maps links hide their coordinates: expand them in the
+  // background so the nearest outlet can be picked automatically.
+  useEffect(() => {
+    let cancelled = false;
+    resolveBranchCoords(branches).then((resolved) => {
+      if (!cancelled && resolved) setCoordsRevision((revision) => revision + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [branches]);
+
+  // Prefer the Google Maps link saved with the dish/branch; fall back to a search query.
+  const searchMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    currentDish.address || currentDish.restaurant,
+  )}`;
   const mapsUrl =
-    currentDish.google_map_url ||
-    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-      currentDish.address || currentDish.restaurant,
-    )}`;
+    activeBranch?.google_map_url || currentDish.google_map_url || searchMapsUrl;
+  const displayAddress =
+    activeBranch?.address || currentDish.address || t.detail.noAddress;
+  // Every outlet of a restaurant shares the same opening hours.
+  const displayOpeningTime = currentDish.opening_time || t.detail.noHours;
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'G';
 
   const formatCooldownDate = (date: Date) =>
@@ -371,15 +448,31 @@ export default function DishDetailModal({
                 <div className="carousel-track" ref={carouselRef} onScroll={handleCarouselScroll}>
                   {images.map((src, i) => (
                     <div key={`${src}-${i}`} className="carousel-slide">
-                      <Image
-                        src={src}
-                        alt={`${currentDish.name} ${i + 1}`}
-                        fill
-                        sizes="(max-width: 640px) 100vw, 560px)"
-                        style={{ objectFit: 'cover' }}
-                        priority={i === 0}
-                        draggable={false}
-                      />
+                      {/* Lớp nền mờ nghệ thuật lấp đầy khung 16:9 */}
+                      <div className="carousel-backdrop" aria-hidden="true">
+                        <Image
+                          src={src}
+                          alt=""
+                          fill
+                          sizes="(max-width: 640px) 100vw, 560px"
+                          style={{ objectFit: 'cover' }}
+                          priority={i === 0}
+                          draggable={false}
+                        />
+                      </div>
+
+                      {/* Lớp ảnh chính hiển thị trọn vẹn 100% không bị crop */}
+                      <div className="carousel-fg">
+                        <Image
+                          src={src}
+                          alt={`${currentDish.name} ${i + 1}`}
+                          fill
+                          sizes="(max-width: 640px) 100vw, 560px"
+                          style={{ objectFit: 'contain' }}
+                          priority={i === 0}
+                          draggable={false}
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -480,14 +573,88 @@ export default function DishDetailModal({
                 </span>
                 <div className="info-text">
                   <span className="info-label">{t.detail.address}</span>
-                  <span className="info-value">
-                    {currentDish.address || t.detail.noAddress}
-                  </span>
+                  <span className="info-value">{displayAddress}</span>
+                  {activeDistanceKm !== null && (
+                    <span className={`nearest-badge ${activeIsNearest ? 'is-nearest' : ''}`}>
+                      {activeIsNearest ? `${t.branches.nearestToYou} • ` : ''}
+                      {t.branches.distanceAway(formatDistance(activeDistanceKm, lang))}
+                    </span>
+                  )}
                 </div>
                 <span className="info-arrow" aria-hidden="true">
                   <ExternalLink size={15} />
                 </span>
               </a>
+
+              {/* Multi-outlet restaurants — switch between the branches */}
+              {otherBranches.length > 0 && (
+                <div className="branch-switcher">
+                  <button
+                    type="button"
+                    className={`branch-toggle ${branchListOpen ? 'is-open' : ''}`}
+                    onClick={() => setBranchListOpen((open) => !open)}
+                    aria-expanded={branchListOpen}
+                  >
+                    <MapPin size={15} />
+                    <span>{t.branches.changeBranch}</span>
+                    <ChevronDown size={15} className="branch-caret" />
+                  </button>
+
+                  {branchListOpen && (
+                    <ul className="branch-list">
+                      {otherBranches.map(({ branch, index }) => {
+                        const distanceKm = distanceToBranch(branch, coords);
+                        const isNearest = nearest !== null && nearest.index === index;
+                        const branchTitle =
+                          branch.name || branch.address || t.branches.mainBranch;
+                        return (
+                          <li
+                            key={`${branch.id ?? branch.name ?? 'branch'}-${index}`}
+                            className="branch-item"
+                          >
+                            <button
+                              type="button"
+                              className="branch-pick"
+                              onClick={() => {
+                                setSelectedBranchIndex(index);
+                                setBranchListOpen(false);
+                              }}
+                            >
+                              <span className="branch-item-title">{branchTitle}</span>
+                              {branch.name && branch.address && (
+                                <span className="branch-item-address">{branch.address}</span>
+                              )}
+                              <span className="branch-item-meta">
+                                {distanceKm !== null && (
+                                  <span className="branch-item-distance">
+                                    {t.branches.distanceAway(formatDistance(distanceKm, lang))}
+                                  </span>
+                                )}
+                                {isNearest && (
+                                  <span className="branch-item-tag">
+                                    {t.branches.nearestToYou}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                            <a
+                              className="branch-maps"
+                              href={branch.google_map_url || searchMapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`${t.branches.openInMaps}: ${branchTitle}`}
+                              title={t.branches.openInMaps}
+                            >
+                              <ExternalLink size={14} />
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               <div className="info-row">
                 <span className="info-icon">
@@ -495,7 +662,7 @@ export default function DishDetailModal({
                 </span>
                 <div className="info-text">
                   <span className="info-label">{t.detail.openingTime}</span>
-                  <span className="info-value">{currentDish.opening_time || t.detail.noHours}</span>
+                  <span className="info-value">{displayOpeningTime}</span>
                 </div>
               </div>
 
@@ -749,7 +916,7 @@ export default function DishDetailModal({
           top: 0;
           left: 50%;
           transform: translateX(-50%);
-          z-index: 7;
+          z-index: 4;
           box-sizing: content-box;
           width: 44px;
           height: 5px;
@@ -876,6 +1043,23 @@ export default function DishDetailModal({
           height: 100%;
           scroll-snap-align: start;
           position: relative;
+          overflow: hidden;
+        }
+        /* Blurred backdrop — the same photo, cover-fitted and blurred, so the
+           16:9 frame is filled edge to edge with no dead grey bars. */
+        .carousel-backdrop {
+          position: absolute;
+          inset: -12px; /* Mở rộng nhẹ để tránh viền trắng/mờ do CSS filter blur */
+          filter: blur(22px) brightness(0.68) saturate(1.25);
+          transform: scale(1.08);
+          pointer-events: none;
+          z-index: 1;
+        }
+        /* Foreground — contain-fitted so the dish is never cropped. */
+        .carousel-fg {
+          position: absolute;
+          inset: 0;
+          z-index: 2;
         }
         .carousel-badge {
           position: absolute;
@@ -887,7 +1071,7 @@ export default function DishDetailModal({
           border-radius: 999px;
           font-size: 12px;
           font-weight: 700;
-          z-index: 2;
+          z-index: 3;
           backdrop-filter: blur(4px);
           -webkit-backdrop-filter: blur(4px);
           pointer-events: none;
@@ -905,6 +1089,7 @@ export default function DishDetailModal({
           inset: 0;
           background: linear-gradient(to bottom, rgba(0, 0, 0, 0.42), transparent 42%);
           pointer-events: none;
+          z-index: 3;
         }
         .hero-top {
           position: absolute;
@@ -915,7 +1100,7 @@ export default function DishDetailModal({
           align-items: flex-start;
           justify-content: space-between;
           padding: 12px;
-          z-index: 2;
+          z-index: 4;
           /* Second drag zone: the empty space around the hero buttons pulls
              the sheet down just like the handle does. Vertical panning stays
              allowed so the content can still be scrolled from here. */
@@ -1142,6 +1327,159 @@ export default function DishDetailModal({
         }
         .info-row-link:hover .info-arrow {
           color: var(--primary);
+        }
+        /* Distance badge shown under the address of the active branch. */
+        .nearest-badge {
+          display: inline-flex;
+          align-items: center;
+          align-self: flex-start;
+          margin-top: 4px;
+          padding: 3px 8px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border-strong);
+          background: var(--surface);
+          color: var(--text-soft);
+          font-size: 0.6875rem;
+          font-weight: 700;
+          line-height: 1.3;
+          white-space: nowrap;
+        }
+        .nearest-badge.is-nearest {
+          border-color: var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+        }
+        /* Branch switcher — only rendered for multi-outlet restaurants. */
+        .branch-switcher {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .branch-toggle {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          width: 100%;
+          min-height: 44px;
+          padding: 8px 12px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+          font-family: inherit;
+          font-size: 0.875rem;
+          font-weight: 700;
+          text-align: left;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .branch-toggle:hover {
+          border-color: var(--primary);
+        }
+        .branch-toggle span {
+          flex: 1;
+          min-width: 0;
+        }
+        .branch-caret {
+          flex-shrink: 0;
+          transition: transform var(--dur-fast) var(--ease);
+        }
+        .branch-toggle.is-open .branch-caret {
+          transform: rotate(180deg);
+        }
+        .branch-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .branch-item {
+          display: flex;
+          align-items: stretch;
+          gap: 6px;
+          padding: 6px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          transition: border-color var(--dur-fast) var(--ease),
+            background var(--dur-fast) var(--ease);
+        }
+        .branch-pick {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          padding: 6px 8px;
+          border: none;
+          border-radius: var(--r-sm);
+          background: none;
+          color: inherit;
+          font-family: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+        .branch-item-title {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.875rem;
+          font-weight: 700;
+          color: var(--text);
+          line-height: 1.3;
+          word-break: break-word;
+        }
+        .branch-item-address {
+          font-size: 0.75rem;
+          color: var(--text-soft);
+          line-height: 1.35;
+          word-break: break-word;
+        }
+        .branch-item-meta {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 6px;
+          margin-top: 2px;
+        }
+        .branch-item-distance,
+        .branch-item-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          padding: 2px 7px;
+          border-radius: var(--r-full);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          color: var(--text-soft);
+          font-size: 0.6875rem;
+          font-weight: 700;
+          line-height: 1.3;
+          white-space: nowrap;
+        }
+        .branch-item-tag {
+          border-color: var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+        }
+        .branch-maps {
+          display: grid;
+          place-items: center;
+          width: 36px;
+          flex-shrink: 0;
+          border-radius: var(--r-sm);
+          border: 1px solid var(--border);
+          background: var(--surface);
+          color: var(--text-soft);
+          transition: color var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .branch-maps:hover {
+          color: var(--primary);
+          border-color: var(--primary);
         }
         /* Reviews & comments */
         .reviews {

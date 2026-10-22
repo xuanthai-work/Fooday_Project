@@ -10,6 +10,12 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-22-display-distance-badge-for-all-restaurants.md](tasks/2026-10-22-display-distance-badge-for-all-restaurants.md) | Display Distance Badge for All Restaurants on Home Cards | 2026-10-22 | ✅ PASS |
+| [2026-10-22-remove-branch-count-display.md](tasks/2026-10-22-remove-branch-count-display.md) | Remove Branch Count Display from Home Cards and Detail Modal | 2026-10-22 | ✅ PASS |
+| [2026-10-22-fix-short-maps-link-nearest-branch-and-branch-ui.md](tasks/2026-10-22-fix-short-maps-link-nearest-branch-and-branch-ui.md) | Fix Nearest Branch Resolution for Short Maps Links & Refine Branch UI | 2026-10-22 | ✅ PASS |
+| [2026-10-22-multi-branch-restaurant-support.md](tasks/2026-10-22-multi-branch-restaurant-support.md) | Multi-Branch Restaurant Support & Nearest Branch Prioritization | 2026-10-22 | ✅ PASS |
+| [2026-10-22-artistic-blurred-backdrop-hero-carousel.md](tasks/2026-10-22-artistic-blurred-backdrop-hero-carousel.md) | Artistic Blurred Backdrop with Contain Fit in DishDetailModal Hero Carousel | 2026-10-22 | ✅ PASS |
+| [2026-10-22-fix-preload-warning-navigation-brand.md](tasks/2026-10-22-fix-preload-warning-navigation-brand.md) | Fix Preload Warning on Navigation Brand Image | 2026-10-22 | ✅ PASS |
 | [2026-10-21-refactor-clean-pull-down-and-wheel-dismiss-synthetic-events.md](tasks/2026-10-21-refactor-clean-pull-down-and-wheel-dismiss-synthetic-events.md) | Clean Refactor of DishDetailModal Pull-Down & Wheel Dismiss via React Synthetic Events | 2026-10-21 | ✅ PASS |
 | [2026-10-21-prioritize-restaurant-name-over-dish-name.md](tasks/2026-10-21-prioritize-restaurant-name-over-dish-name.md) | Prioritize Restaurant Name as Primary Heading in DishDetailModal | 2026-10-21 | ✅ PASS |
 | [2026-10-21-fix-modal-drag-and-wheel-to-dismiss.md](tasks/2026-10-21-fix-modal-drag-and-wheel-to-dismiss.md) | Fix DishDetailModal Pull-Down & Wheel-Down to Dismiss Across Desktop and Mobile | 2026-10-21 | ✅ PASS |

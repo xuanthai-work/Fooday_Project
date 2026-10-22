@@ -14,6 +14,16 @@ export type CategoryFilter = 'All' | FoodCategory;
 /** Filter chips for browsing: "All" plus every real category. */
 export const CATEGORY_FILTERS: CategoryFilter[] = ['All', ...FOOD_CATEGORIES];
 
+/** A single outlet of a restaurant. The first one is the main branch. */
+export interface Branch {
+  id?: string;
+  name?: string; // Ví dụ: "Cơ sở Cầu Giấy"
+  address: string; // "13 Lò Đúc, Q. Hai Bà Trưng, Hà Nội"
+  google_map_url?: string; // Link Google Maps
+  lat?: number | null; // Vĩ độ (bóc tách từ link Google Maps)
+  lng?: number | null; // Kinh độ (bóc tách từ link Google Maps)
+}
+
 export interface Food {
   id: number;
   slug: string;
@@ -29,9 +39,15 @@ export interface Food {
   opening_time?: string | null;
   review_note?: string | null;
   created_by: string | null;
+  /** Extra outlets of the restaurant (stored as a jsonb array). */
+  branches?: Branch[] | null;
 }
 
 const COLUMNS =
+  'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches';
+
+/** Same list without the optional `branches` column. */
+const COLUMNS_WITHOUT_BRANCHES =
   'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
 
 // Shared store so a newly added dish appears app-wide (Home + Profile) without reload.
@@ -45,10 +61,29 @@ const emit = () => listeners.forEach((l) => l());
 async function load(): Promise<void> {
   loadingNow = true;
   emit();
-  const { data, error } = await supabase
+  const primary = await supabase
     .from('foods')
     .select(COLUMNS)
     .order('id', { ascending: true });
+
+  let data: unknown = primary.data;
+  let error = primary.error;
+
+  if (error) {
+    // The `branches` column may not be migrated yet — keep the catalog alive
+    // instead of showing an empty feed.
+    console.warn(
+      '[useFoods] could not read the "branches" column, retrying without it:',
+      error.message,
+    );
+    const fallback = await supabase
+      .from('foods')
+      .select(COLUMNS_WITHOUT_BRANCHES)
+      .order('id', { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (!error) {
     cache = (data ?? []) as unknown as Food[];
     loaded = true;

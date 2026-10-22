@@ -17,7 +17,8 @@ create table if not exists public.foods (
   tag          text,
   address      text,
   opening_time text,
-  review_note  text,
+review_note  text,
+  branches     jsonb default '[]'::jsonb,
   created_by   uuid references auth.users (id) on delete set null default auth.uid(),
   created_at   timestamptz not null default now()
 );
@@ -28,6 +29,7 @@ alter table public.foods
   add column if not exists address      text,
   add column if not exists opening_time text,
   add column if not exists review_note  text,
+  add column if not exists branches     jsonb default '[]'::jsonb,
   add column if not exists created_by   uuid references auth.users (id) on delete set null default auth.uid();
 
 -- Bật Row Level Security (RLS) cho foods

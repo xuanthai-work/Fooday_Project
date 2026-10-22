@@ -11,6 +11,7 @@ import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, serializeHashtags } from '@/lib/hashtags';
 import { isGoogleMapsUrl } from '@/lib/maps';
 import DishNameAutocomplete from './DishNameAutocomplete';
+import BranchEditor, { type BranchDraft } from './BranchEditor';
 
 export { TRENDING_HASHTAGS };
 
@@ -38,6 +39,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [imageList, setImageList] = useState<string[]>([]);
+  const [branches, setBranches] = useState<BranchDraft[]>([]);
   const [candidates, setCandidates] = useState<DishImage[]>([]);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -190,7 +192,17 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     const finalTag = serializeHashtags(
       tagInput.trim() ? [...selectedTags, tagInput] : selectedTags,
     );
-    const { error: insErr } = await supabase.from('foods').insert({
+    // Keep only the branches that carry real information.
+    const cleanBranches = branches
+      .map((branch) => ({
+        name: branch.name.trim(),
+        address: branch.address.trim(),
+        google_map_url: branch.googleMapUrl.trim(),
+        lat: branch.lat ?? null,
+        lng: branch.lng ?? null,
+      }))
+      .filter((branch) => branch.name || branch.address || branch.google_map_url);
+    const payload = {
       slug,
       name: name.trim(),
       category,
@@ -201,7 +213,10 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       tag: finalTag || null,
       address: address.trim() || null,
       google_map_url: googleMapUrl.trim(),
-    });
+      // Only sent when there is something to store.
+      ...(cleanBranches.length > 0 ? { branches: cleanBranches } : {}),
+    };
+    const { error: insErr } = await supabase.from('foods').insert(payload);
     if (insErr) {
       setError(insErr.message);
       setBusy(false);
@@ -385,6 +400,13 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
               </span>
             )}
           </label>
+
+          {/* Branches — the extra outlets of the same restaurant */}
+          <div className="field">
+            <span className="label">{t.branches.branchesSection}</span>
+            <span className="field-hint">{t.branches.branchesHint}</span>
+            <BranchEditor branches={branches} onChange={setBranches} />
+          </div>
 
           {/* Rating */}
           <div className="field">

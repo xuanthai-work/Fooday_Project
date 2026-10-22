@@ -10,7 +10,9 @@ import { dishImageService, mapService, DishImage } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, parseHashtags, serializeHashtags } from '@/lib/hashtags';
 import { isGoogleMapsUrl } from '@/lib/maps';
+import { parseBranches } from '@/lib/geo';
 import DishNameAutocomplete from './DishNameAutocomplete';
+import BranchEditor, { createBranchDraft, type BranchDraft } from './BranchEditor';
 
 export { TRENDING_HASHTAGS };
 
@@ -42,6 +44,16 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         : [],
   );
   const [candidates, setCandidates] = useState<DishImage[]>([]);
+  const [branches, setBranches] = useState<BranchDraft[]>(() =>
+    parseBranches(dish.branches).map((branch) => ({
+      ...createBranchDraft(),
+      name: branch.name || '',
+      googleMapUrl: branch.google_map_url || '',
+      address: branch.address || '',
+      lat: branch.lat ?? null,
+      lng: branch.lng ?? null,
+    })),
+  );
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,6 +195,17 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
       tagInput.trim() ? [...selectedTags, tagInput] : selectedTags,
     );
 
+    // Keep only the branches that carry real information.
+    const cleanBranches = branches
+      .map((branch) => ({
+        name: branch.name.trim(),
+        address: branch.address.trim(),
+        google_map_url: branch.googleMapUrl.trim(),
+        lat: branch.lat ?? null,
+        lng: branch.lng ?? null,
+      }))
+      .filter((branch) => branch.name || branch.address || branch.google_map_url);
+
     const { data, error: updErr } = await supabase
       .from('foods')
       .update({
@@ -196,6 +219,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
         review_note: reviewNote.trim() || null,
         image_url: imageList[0] || dish.image_url || '',
         images: imageList,
+        branches: cleanBranches.length > 0 ? cleanBranches : null,
       })
       .eq('id', dish.id)
       .select()
@@ -403,6 +427,13 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
                 placeholder={t.detail.noHours}
               />
             </label>
+          </div>
+
+          {/* Branches — the extra outlets of the same restaurant */}
+          <div className="field">
+            <span className="label">{t.branches.branchesSection}</span>
+            <span className="field-hint">{t.branches.branchesHint}</span>
+            <BranchEditor branches={branches} onChange={setBranches} />
           </div>
 
           {/* Tags — multi-select presets + custom hashtag input */}

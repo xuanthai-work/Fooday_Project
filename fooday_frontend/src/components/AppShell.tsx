@@ -130,7 +130,6 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 width={28}
                 height={28}
                 style={{ borderRadius: 'var(--r-sm)', objectFit: 'cover' }}
-                preload
               />
             </div>
             <span className="nav-brand-text">Fooday</span>

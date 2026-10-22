@@ -1,12 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
-import { Search, Heart, Star, Sparkles } from 'lucide-react';
+import { Search, Heart, Star, Sparkles, MapPin } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useTranslation } from '@/i18n/LanguageContext';
+import {
+  findNearestBranch,
+  formatDistance,
+  getAllBranches,
+  resolveBranchCoords,
+  useUserLocation,
+} from '@/lib/geo';
 import ThemeToggle from './ThemeToggle';
 import DishDetailModal from './DishDetailModal';
 
@@ -96,15 +103,51 @@ function itemMatchesMood(item: Food, mood: MoodTaskOption): boolean {
 }
 
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const { foods, loading } = useFoods();
   const { ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
+  const { coords } = useUserLocation();
   const [selectedMood, setSelectedMood] = useState<MoodTaskCategory>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
 
   const currentMoodOption = MOOD_TASKS.find((m) => m.id === selectedMood) ?? MOOD_TASKS[0];
+
+  // The shortened Google Maps links hide their coordinates: expand them in the
+  // background so every card can show its distance to the closest outlet.
+  // The revision is bumped whenever a link turns into real coordinates.
+  const [coordsRevision, setCoordsRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    const allBranches = foods.flatMap((item) =>
+      getAllBranches(item, t.branches.mainBranch),
+    );
+    resolveBranchCoords(allBranches).then((resolved) => {
+      if (active && resolved) {
+        setCoordsRevision((r) => r + 1);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [foods, t.branches.mainBranch]);
+
+  // One card per dish — every card carries a small distance badge.
+  const branchSummaries = useMemo(() => {
+    // Reading the revision keeps the memo honest about its dependencies.
+    void coordsRevision;
+    const map = new Map<number, { total: number; distanceKm: number | null }>();
+    for (const item of foods) {
+      const branches = getAllBranches(item, t.branches.mainBranch);
+      const nearest = findNearestBranch(branches, coords);
+      map.set(item.id, {
+        total: branches.length,
+        distanceKm: nearest ? nearest.distanceKm : null,
+      });
+    }
+    return map;
+  }, [foods, coords, coordsRevision, t.branches.mainBranch]);
 
   const filteredFoods = foods.filter((item) => {
     const matchesMood = itemMatchesMood(item, currentMoodOption);
@@ -198,6 +241,10 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         <div className="grid">
           {filteredFoods.map((item, index) => {
             const isFav = favorites.has(item.id);
+            const branchSummary = branchSummaries.get(item.id);
+            const hasDistance = branchSummary?.distanceKm != null;
+            const isMultiBranch = Boolean(branchSummary && branchSummary.total > 1);
+            const showDistanceBadge = hasDistance || isMultiBranch;
             return (
               <article
                 key={item.id}
@@ -242,6 +289,16 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                 </div>
                 <div className="card-body">
                   <h3 className="card-name">{item.restaurant}</h3>
+                  {showDistanceBadge && branchSummary && (
+                    <span className="card-branch-badge">
+                      <MapPin size={12} />
+                      {hasDistance
+                        ? t.branches.distanceAway(
+                            formatDistance(branchSummary.distanceKm!, lang),
+                          )
+                        : t.branches.multiBranch}
+                    </span>
+                  )}
                   <div className="card-foot">
                     <span className="rating">
                       <Star size={13} fill="var(--star)" color="var(--star)" />
@@ -582,6 +639,30 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        /* Multi-outlet badge — one line, never wraps, never breaks the card. */
+        .card-branch-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          align-self: flex-start;
+          max-width: 100%;
+          margin-bottom: 8px;
+          padding: 3px 8px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+          font-size: 0.6875rem;
+          font-weight: 700;
+          line-height: 1.3;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          pointer-events: none;
+        }
+        .card-branch-badge :global(svg) {
+          flex-shrink: 0;
         }
         .card-foot {
           display: flex;
