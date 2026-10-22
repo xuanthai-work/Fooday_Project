@@ -11,6 +11,8 @@ function getBackendChatUrl(): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // The whole payload is forwarded untouched: the backend owns the shape of
+    // the request (message, favorites, conversation history, GPS position).
     const body = await req.json();
     const targetUrl = getBackendChatUrl();
     const secret = process.env.INTERNAL_API_SECRET;
@@ -33,7 +35,12 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('[BFF /api/chat error]:', error);
     return NextResponse.json(
-      { reply: 'Không thể kết nối đến máy chủ AI lúc này.', fallback: 'error', suggested_dishes: [] },
+      {
+        reply: 'Không thể kết nối đến máy chủ AI lúc này.',
+        fallback: 'error',
+        suggested_dishes: [],
+        suggested_cards: [],
+      },
       { status: 502 },
     );
   }

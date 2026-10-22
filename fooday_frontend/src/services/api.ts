@@ -1,8 +1,33 @@
+/** A turn of the conversation, sent back so the model keeps the context. */
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** GPS position of the user, used to rank restaurants by distance. */
+export interface UserCoords {
+  lat: number;
+  lng: number;
+}
+
+/** A dish rendered as a rich card inside the chat bubble. */
+export interface DishCardInfo {
+  id: number;
+  name: string;
+  restaurant: string;
+  rating: number;
+  image_url: string;
+  distance_km?: number | null;
+  address?: string | null;
+}
+
 export interface ChatRequest {
   user_message: string;
   user_id?: string;
   favorites?: string[];
   language?: string;
+  conversation_history?: ChatHistoryMessage[];
+  user_coords?: UserCoords | null;
 }
 
 export type ChatFallback = 'error' | 'unconfigured' | 'empty';
@@ -11,7 +36,14 @@ export interface ChatResponse {
   reply: string;
   action: string | null;
   suggested_dishes: string[];
+  suggested_cards?: DishCardInfo[];
   fallback?: ChatFallback | null;
+}
+
+/** Extra context of a chat request (multi-turn memory + GPS). */
+export interface ChatContext {
+  conversation_history?: ChatHistoryMessage[];
+  user_coords?: UserCoords | null;
 }
 
 const resolveEndpoint = (path: string): string => {
@@ -29,6 +61,7 @@ export const chatService = {
     favorites: string[] = [],
     userId: string = 'nextjs_user',
     language?: string,
+    context: ChatContext = {},
   ): Promise<ChatResponse | null> {
     try {
       const response = await fetch(resolveEndpoint('/chat'), {
@@ -41,6 +74,8 @@ export const chatService = {
           user_id: userId,
           favorites,
           language,
+          conversation_history: context.conversation_history ?? [],
+          user_coords: context.user_coords ?? null,
         } as ChatRequest),
       });
 

@@ -2,12 +2,20 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
-import { Send, Plus, Heart, Reply, X } from 'lucide-react';
-import { chatService, type ChatResponse } from '@/services/api';
+import { Send, Plus, Heart, Reply, X, Star, MapPin, UtensilsCrossed } from 'lucide-react';
+import {
+  chatService,
+  type ChatHistoryMessage,
+  type ChatResponse,
+  type DishCardInfo,
+} from '@/services/api';
 import type { Translation } from '@/i18n/translations';
 import { useFavorites } from '@/hooks/useFavorites';
-import { useFoods } from '@/hooks/useFoods';
+import { useFoods, type Food } from '@/hooks/useFoods';
+import { useReviewStats } from '@/hooks/useReviewStats';
 import { useTranslation } from '@/i18n/LanguageContext';
+import { formatDistance, useUserLocation } from '@/lib/geo';
+import DishDetailModal from './DishDetailModal';
 
 interface ReplyRef {
   id: string;
@@ -20,6 +28,8 @@ interface Message {
   message: string;
   time: string;
   suggestedDishes?: string[];
+  /** rich dish cards rendered inside the bubble */
+  suggestedCards?: DishCardInfo[];
   /** when true, chips send their own label verbatim; otherwise wrapped as "Tell me more about …" */
   chipsVerbatim?: boolean;
   liked?: boolean;
@@ -37,9 +47,22 @@ const now = () =>
 let messageSeq = 0;
 const nextId = () => `m${Date.now().toString(36)}-${messageSeq++}`;
 
+/** How many earlier turns are sent back so the model keeps the context. */
+const HISTORY_LIMIT = 6;
+
 /** Quote the AI message so the model knows which bubble the user is answering. */
 const withReplyContext = (text: string, reply: ReplyRef) =>
   `The user is replying to this message from you: """${reply.text}"""\n\n${text}`;
+
+/** The last turns of the conversation, in the shape the backend expects. */
+const buildHistory = (messages: Message[]): ChatHistoryMessage[] =>
+  messages
+    .filter((msg) => msg.id !== 'welcome' && msg.message.trim().length > 0)
+    .slice(-HISTORY_LIMIT)
+    .map((msg) => ({
+      role: msg.isUser ? 'user' : 'assistant',
+      content: msg.message,
+    }));
 
 // Exact strings older backends still return. The UI language wins over these.
 const LEGACY_FALLBACKS: Record<
@@ -86,6 +109,11 @@ export default function ChatView({
   const focusScrollTimer = useRef<number | null>(null);
   const { favorites } = useFavorites();
   const { byId } = useFoods();
+  // Live review average, falling back to the seeded catalog score.
+  const { ratingOf } = useReviewStats();
+  // GPS position of the user: the backend ranks restaurants by distance.
+  const { coords } = useUserLocation();
+  const [selectedDish, setSelectedDish] = useState<Food | null>(null);
 
   const scrollToBottom = (smooth = true) => {
     endRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
@@ -154,6 +182,10 @@ export default function ChatView({
       favoriteNames,
       undefined,
       lang,
+      {
+        conversation_history: buildHistory(messages),
+        user_coords: coords ? { lat: coords.lat, lng: coords.lng } : null,
+      },
     );
     setIsLoading(false);
 
@@ -166,6 +198,7 @@ export default function ChatView({
             message: localizedReply(response, t.chat),
             time: now(),
             suggestedDishes: response.suggested_dishes,
+            suggestedCards: response.suggested_cards,
           }
         : {
             id: nextId(),
@@ -178,6 +211,33 @@ export default function ChatView({
 
   const handleChip = (label: string, verbatim?: boolean) => {
     handleSend(verbatim ? label : t.chat.tellMoreAbout(label), null);
+  };
+
+  /** Open the dish of a chat card in the detail modal. */
+  const openDishCard = (card: DishCardInfo) => {
+    const dish = byId[card.id];
+    if (dish) {
+      setSelectedDish(dish);
+      return;
+    }
+    // The dish is not in the local catalog (yet): show the card payload.
+    setSelectedDish({
+      id: card.id,
+      slug: String(card.id),
+      name: card.name,
+      category: 'Foods',
+      restaurant: card.restaurant,
+      rating: card.rating,
+      image_url: card.image_url,
+      images: null,
+      tag: null,
+      address: card.address ?? null,
+      google_map_url: null,
+      opening_time: null,
+      review_note: null,
+      created_by: null,
+      branches: null,
+    });
   };
 
   const toggleLike = (id: string) => {
@@ -255,6 +315,52 @@ export default function ChatView({
                       </div>
                     )}
                     <p className="text">{msg.message}</p>
+                    {!msg.isUser && msg.suggestedCards && msg.suggestedCards.length > 0 && (
+                      <div className="chat-cards-carousel">
+                        {msg.suggestedCards.map((card) => (
+                          <button
+                            key={`${card.id}-${card.name}`}
+                            type="button"
+                            className="chat-dish-card"
+                            onClick={() => openDishCard(card)}
+                          >
+                            <span className="card-media">
+                              {card.image_url ? (
+                                <Image
+                                  src={card.image_url}
+                                  alt={card.name}
+                                  fill
+                                  sizes="(max-width: 640px) 58vw, 190px"
+                                  style={{ objectFit: 'cover' }}
+                                />
+                              ) : (
+                                <span className="card-media-empty">
+                                  <UtensilsCrossed size={18} />
+                                </span>
+                              )}
+                            </span>
+                            <span className="card-body">
+                              <span className="card-name">{card.name}</span>
+                              <span className="card-restaurant">{card.restaurant}</span>
+                              <span className="card-meta">
+                                {ratingOf(card.id, card.rating) > 0 && (
+                                  <span className="card-rating">
+                                    <Star size={12} fill="var(--star)" color="var(--star)" />
+                                    {ratingOf(card.id, card.rating).toFixed(1)}
+                                  </span>
+                                )}
+                                {card.distance_km != null && (
+                                  <span className="card-distance">
+                                    <MapPin size={12} />
+                                    {formatDistance(card.distance_km, lang)}
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {!msg.isUser && msg.suggestedDishes && msg.suggestedDishes.length > 0 && (
                       <div className="chips">
                         {msg.suggestedDishes.map((dish) => (
@@ -395,6 +501,17 @@ export default function ChatView({
           </button>
         </div>
       </div>
+
+      {selectedDish && (
+        <DishDetailModal
+          dish={selectedDish}
+          onClose={() => setSelectedDish(null)}
+          onNavigateToChat={(msg) => {
+            setSelectedDish(null);
+            handleSend(msg);
+          }}
+        />
+      )}
 
       <style jsx>{`
         .chat {
@@ -628,6 +745,103 @@ export default function ChatView({
           margin-top: 12px;
           padding-top: 12px;
           border-top: 1px dashed var(--border-strong);
+        }
+        /* Rich dish cards: a smooth horizontal carousel inside the bubble */
+        .chat-cards-carousel {
+          display: flex;
+          gap: 10px;
+          margin-top: 12px;
+          padding: 2px 2px 6px;
+          overflow-x: auto;
+          scroll-snap-type: x proximity;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+        .chat-cards-carousel::-webkit-scrollbar {
+          display: none;
+        }
+        .chat-dish-card {
+          flex: 0 0 auto;
+          width: 178px;
+          scroll-snap-align: start;
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          padding: 0;
+          overflow: hidden;
+          text-align: left;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          cursor: pointer;
+          transition: transform var(--dur-fast) var(--ease),
+            box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+        }
+        .chat-dish-card:hover {
+          transform: translateY(-3px);
+          border-color: var(--primary);
+          box-shadow: var(--shadow-primary);
+        }
+        .chat-dish-card:active {
+          transform: translateY(-1px) scale(0.98);
+        }
+        .card-media {
+          position: relative;
+          display: block;
+          width: 100%;
+          aspect-ratio: 16 / 9;
+          background: var(--surface-3);
+          overflow: hidden;
+        }
+        .card-media-empty {
+          position: absolute;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          color: var(--text-faint);
+        }
+        .card-body {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          padding: 9px 10px 11px;
+        }
+        .card-name {
+          font-size: 0.8125rem;
+          font-weight: 700;
+          color: var(--text);
+          line-height: 1.3;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 1;
+          -webkit-box-orient: vertical;
+        }
+        .card-restaurant {
+          font-size: 0.71875rem;
+          color: var(--text-soft);
+          line-height: 1.3;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 1;
+          -webkit-box-orient: vertical;
+        }
+        .card-meta {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 5px;
+          font-size: 0.6875rem;
+          color: var(--text-soft);
+        }
+        .card-rating,
+        .card-distance {
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          white-space: nowrap;
+        }
+        .card-distance {
+          color: var(--primary-strong);
         }
         .chip {
           display: inline-flex;

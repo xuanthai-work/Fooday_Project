@@ -1,13 +1,45 @@
 from pydantic import BaseModel, Field
 
 
+class ChatMessage(BaseModel):
+    """A single turn of the conversation, sent back by the client.
+
+    The frontend keeps the last few turns in memory so the model can follow
+    references such as "not fried rice today" without repeating itself.
+    """
+
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class UserCoords(BaseModel):
+    """GPS position of the user, used to rank restaurants by distance."""
+
+    lat: float
+    lng: float
+
+
+class DishCardInfo(BaseModel):
+    """A dish rendered as a rich card inside the chat bubble."""
+
+    id: int
+    name: str
+    restaurant: str
+    rating: float
+    image_url: str
+    distance_km: float | None = None
+    address: str | None = None
+
+
 class ChatRequest(BaseModel):
     """Payload sent by the frontend chat client."""
 
     user_message: str
     user_id: str | None = "guest"
     favorites: list[str] | None = None  # dish names the user has favorited, for personalization
-    language: str | None = None  # active UI language, "vi" | "en"
+    language: str | None = "vi"  # active UI language, "vi" | "en"
+    conversation_history: list[ChatMessage] | None = None  # last turns, for multi-turn context
+    user_coords: UserCoords | None = None  # GPS position, for location-aware answers
 
 
 class ChatResponse(BaseModel):
@@ -16,6 +48,7 @@ class ChatResponse(BaseModel):
     reply: str
     action: str | None = None  # optional follow-up action, e.g. "open_map"
     suggested_dishes: list[str] = Field(default_factory=list)
+    suggested_cards: list[DishCardInfo] = Field(default_factory=list)
     # Set when reply is a system fallback so the client can localize it.
     # "error" | "unconfigured" | "empty"
     fallback: str | None = None
