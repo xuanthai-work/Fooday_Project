@@ -13,9 +13,15 @@ import type { Translation } from '@/i18n/translations';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
+import { useEmojiRain } from '@/hooks/useEmojiRain';
+import { useChatRain } from '@/hooks/useChatRain';
+import { useFunEffects } from '@/hooks/useFunEffects';
+import { findDishMentions, pickEmojiCategories } from '@/lib/dishMatch';
+import { createThrottler } from '@/lib/throttle';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatDistance, useUserLocation } from '@/lib/geo';
 import DishDetailModal from './DishDetailModal';
+import EmojiRain from './EmojiRain';
 
 interface ReplyRef {
   id: string;
@@ -108,15 +114,43 @@ export default function ChatView({
   const inputRef = useRef<HTMLInputElement>(null);
   const focusScrollTimer = useRef<number | null>(null);
   const { favorites } = useFavorites();
-  const { byId } = useFoods();
+  const { foods, byId } = useFoods();
   // Live review average, falling back to the seeded catalog score.
   const { ratingOf } = useReviewStats();
   // GPS position of the user: the backend ranks restaurants by distance.
   const { coords } = useUserLocation();
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
+  const { bursts, trigger: triggerRain } = useEmojiRain();
+  const { enabled: funEnabled } = useFunEffects();
+  const { celebrated, markCelebrated } = useChatRain();
+  // The mini sprinkle repeats at most once every 12 seconds.
+  const [allowMini] = useState(() => createThrottler(12000));
+  const celebratedRef = useRef(false);
 
   const scrollToBottom = (smooth = true) => {
     endRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  };
+
+  /**
+   * Emoji sprinkle when the customer mentions a dish.
+   * The first mention of a session gets the full sprinkle, later ones the mini one.
+   */
+  const maybeRain = (text: string, force = false) => {
+    if (!funEnabled) return;
+    const mentions = findDishMentions(text, foods);
+    if (!force && mentions.length === 0) return;
+    const categories = pickEmojiCategories(mentions);
+
+    const alreadyCelebrated = celebrated || celebratedRef.current;
+    if (!alreadyCelebrated) {
+      celebratedRef.current = true;
+      markCelebrated();
+      triggerRain(categories, 'chat');
+      return;
+    }
+
+    if (!allowMini()) return;
+    triggerRain(categories, 'mini');
   };
 
   useEffect(() => {
@@ -174,6 +208,8 @@ export default function ChatView({
     ]);
     setIsLoading(true);
 
+    maybeRain(text);
+
     const favoriteNames = [...favorites]
       .map((id) => byId[id]?.name)
       .filter((n): n is string => Boolean(n));
@@ -210,6 +246,8 @@ export default function ChatView({
   };
 
   const handleChip = (label: string, verbatim?: boolean) => {
+    // Dish suggestion chips always celebrate; the generic welcome chips do not.
+    maybeRain(label, verbatim !== true);
     handleSend(verbatim ? label : t.chat.tellMoreAbout(label), null);
   };
 
@@ -286,14 +324,133 @@ export default function ChatView({
       </header>
 
       {/* Messages */}
-      <div className="messages">
-        {messages.map((msg, index) => (
-          <div
-            key={msg.id}
-            className={`row ${msg.isUser ? 'user' : 'ai'}`}
-            style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
-          >
-            {!msg.isUser && (
+      <div className="messages-wrap">
+        <div className="messages">
+          {messages.map((msg, index) => (
+            <div
+              key={msg.id}
+              className={`row ${msg.isUser ? 'user' : 'ai'}`}
+              style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
+            >
+              {!msg.isUser && (
+                <div className="bot-avatar-mini">
+                  <Image
+                    src="/foodie-avatar.png"
+                    alt={t.chat.botName}
+                    width={28}
+                    height={28}
+                    style={{ borderRadius: '50%', objectFit: 'cover' }}
+                  />
+                </div>
+              )}
+              <div className="row-body">
+                <div className="bubble-line">
+                  <div className={`bubble-wrap ${msg.liked ? 'liked' : ''}`}>
+                    <div className={`bubble ${msg.isUser ? 'user' : 'ai'}`}>
+                      {msg.replyTo && (
+                        <div className="quote">
+                          <span className="quote-label">{t.chat.botName}</span>
+                          <span className="quote-text">{msg.replyTo.text}</span>
+                        </div>
+                      )}
+                      <p className="text">{msg.message}</p>
+                      {!msg.isUser && msg.suggestedCards && msg.suggestedCards.length > 0 && (
+                        <div className="chat-cards-carousel">
+                          {msg.suggestedCards.map((card) => (
+                            <button
+                              key={`${card.id}-${card.name}`}
+                              type="button"
+                              className="chat-dish-card"
+                              onClick={() => openDishCard(card)}
+                            >
+                              <span className="card-media">
+                                {card.image_url ? (
+                                  <Image
+                                    src={card.image_url}
+                                    alt={card.name}
+                                    fill
+                                    sizes="(max-width: 640px) 58vw, 190px"
+                                    style={{ objectFit: 'cover' }}
+                                  />
+                                ) : (
+                                  <span className="card-media-empty">
+                                    <UtensilsCrossed size={18} />
+                                  </span>
+                                )}
+                              </span>
+                              <span className="card-body">
+                                <span className="card-name">{card.name}</span>
+                                <span className="card-restaurant">{card.restaurant}</span>
+                                <span className="card-meta">
+                                  {ratingOf(card.id, card.rating) > 0 && (
+                                    <span className="card-rating">
+                                      <Star size={12} fill="var(--star)" color="var(--star)" />
+                                      {ratingOf(card.id, card.rating).toFixed(1)}
+                                    </span>
+                                  )}
+                                  {card.distance_km != null && (
+                                    <span className="card-distance">
+                                      <MapPin size={12} />
+                                      {formatDistance(card.distance_km, lang)}
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {!msg.isUser && msg.suggestedDishes && msg.suggestedDishes.length > 0 && (
+                        <div className="chips">
+                          {msg.suggestedDishes.map((dish) => (
+                            <button
+                              key={dish}
+                              onClick={() => handleChip(dish, msg.chipsVerbatim)}
+                              className="chip"
+                            >
+                              {dish}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {msg.liked && (
+                      <span className="react-badge" aria-hidden="true">
+                        <Heart size={13} fill="currentColor" />
+                      </span>
+                    )}
+                  </div>
+                  {!msg.isUser && (
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className={`action ${msg.liked ? 'liked' : ''}`}
+                        aria-label={msg.liked ? t.chat.unlike : t.chat.like}
+                        aria-pressed={msg.liked ?? false}
+                        title={msg.liked ? t.chat.unlike : t.chat.like}
+                        onClick={() => toggleLike(msg.id)}
+                      >
+                        <Heart size={16} fill={msg.liked ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        type="button"
+                        className="action"
+                        aria-label={t.chat.reply}
+                        title={t.chat.reply}
+                        onClick={() => startReply(msg)}
+                      >
+                        <Reply size={18} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <span className="time">{msg.time}</span>
+              </div>
+            </div>
+          ))}
+
+          {isLoading && (
+            <div className="row ai row--typing">
               <div className="bot-avatar-mini">
                 <Image
                   src="/foodie-avatar.png"
@@ -303,134 +460,18 @@ export default function ChatView({
                   style={{ borderRadius: '50%', objectFit: 'cover' }}
                 />
               </div>
-            )}
-            <div className="row-body">
-              <div className="bubble-line">
-                <div className={`bubble-wrap ${msg.liked ? 'liked' : ''}`}>
-                  <div className={`bubble ${msg.isUser ? 'user' : 'ai'}`}>
-                    {msg.replyTo && (
-                      <div className="quote">
-                        <span className="quote-label">{t.chat.botName}</span>
-                        <span className="quote-text">{msg.replyTo.text}</span>
-                      </div>
-                    )}
-                    <p className="text">{msg.message}</p>
-                    {!msg.isUser && msg.suggestedCards && msg.suggestedCards.length > 0 && (
-                      <div className="chat-cards-carousel">
-                        {msg.suggestedCards.map((card) => (
-                          <button
-                            key={`${card.id}-${card.name}`}
-                            type="button"
-                            className="chat-dish-card"
-                            onClick={() => openDishCard(card)}
-                          >
-                            <span className="card-media">
-                              {card.image_url ? (
-                                <Image
-                                  src={card.image_url}
-                                  alt={card.name}
-                                  fill
-                                  sizes="(max-width: 640px) 58vw, 190px"
-                                  style={{ objectFit: 'cover' }}
-                                />
-                              ) : (
-                                <span className="card-media-empty">
-                                  <UtensilsCrossed size={18} />
-                                </span>
-                              )}
-                            </span>
-                            <span className="card-body">
-                              <span className="card-name">{card.name}</span>
-                              <span className="card-restaurant">{card.restaurant}</span>
-                              <span className="card-meta">
-                                {ratingOf(card.id, card.rating) > 0 && (
-                                  <span className="card-rating">
-                                    <Star size={12} fill="var(--star)" color="var(--star)" />
-                                    {ratingOf(card.id, card.rating).toFixed(1)}
-                                  </span>
-                                )}
-                                {card.distance_km != null && (
-                                  <span className="card-distance">
-                                    <MapPin size={12} />
-                                    {formatDistance(card.distance_km, lang)}
-                                  </span>
-                                )}
-                              </span>
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {!msg.isUser && msg.suggestedDishes && msg.suggestedDishes.length > 0 && (
-                      <div className="chips">
-                        {msg.suggestedDishes.map((dish) => (
-                          <button
-                            key={dish}
-                            onClick={() => handleChip(dish, msg.chipsVerbatim)}
-                            className="chip"
-                          >
-                            {dish}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {msg.liked && (
-                    <span className="react-badge" aria-hidden="true">
-                      <Heart size={13} fill="currentColor" />
-                    </span>
-                  )}
+              <div className="row-body">
+                <div className="bubble ai typing">
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
                 </div>
-                {!msg.isUser && (
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className={`action ${msg.liked ? 'liked' : ''}`}
-                      aria-label={msg.liked ? t.chat.unlike : t.chat.like}
-                      aria-pressed={msg.liked ?? false}
-                      title={msg.liked ? t.chat.unlike : t.chat.like}
-                      onClick={() => toggleLike(msg.id)}
-                    >
-                      <Heart size={16} fill={msg.liked ? 'currentColor' : 'none'} />
-                    </button>
-                    <button
-                      type="button"
-                      className="action"
-                      aria-label={t.chat.reply}
-                      title={t.chat.reply}
-                      onClick={() => startReply(msg)}
-                    >
-                      <Reply size={18} />
-                    </button>
-                  </div>
-                )}
-              </div>
-              <span className="time">{msg.time}</span>
-            </div>
-          </div>
-        ))}
-
-        {isLoading && (
-          <div className="row ai row--typing">
-            <div className="bot-avatar-mini">
-              <Image
-                src="/foodie-avatar.png"
-                alt={t.chat.botName}
-                width={28}
-                height={28}
-                style={{ borderRadius: '50%', objectFit: 'cover' }}
-              />
-            </div>
-            <div className="row-body">
-              <div className="bubble ai typing">
-                <span className="dot" />
-                <span className="dot" />
-                <span className="dot" />
               </div>
             </div>
-          </div>
-        )}
-        <div ref={endRef} />
+          )}
+          <div ref={endRef} />
+        </div>
+        <EmojiRain bursts={bursts} />
       </div>
 
       {/* Input */}
@@ -521,7 +562,7 @@ export default function ChatView({
         }
         /* Desktop: center the conversation column in the wide content area */
         @media (min-width: 1024px) {
-          .chat .messages,
+          .chat .messages-wrap,
           .chat .dock {
             max-width: 860px;
             margin-inline: auto;
@@ -576,6 +617,14 @@ export default function ChatView({
           height: 6px;
           border-radius: var(--r-full);
           background: var(--online);
+        }
+        .messages-wrap {
+          flex: 1;
+          min-height: 0;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          width: 100%;
         }
         .messages {
           flex: 1;

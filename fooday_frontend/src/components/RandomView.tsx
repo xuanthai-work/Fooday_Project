@@ -3,11 +3,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Dices, Star, Heart, Sparkles, RotateCw, Eye, Loader2 } from 'lucide-react';
-import { useFoods, CATEGORY_FILTERS, CategoryFilter, Food } from '@/hooks/useFoods';
+import { useFoods, FOOD_CATEGORIES, FoodCategory, Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
+import { useEmojiRain } from '@/hooks/useEmojiRain';
+import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
 import DishDetailModal from './DishDetailModal';
+import EmojiRain from './EmojiRain';
 
 interface RandomViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
@@ -89,7 +92,9 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const { foods } = useFoods();
   const { ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
-  const [category, setCategory] = useState<CategoryFilter>('All');
+  const { bursts, trigger: triggerRain } = useEmojiRain();
+  const { enabled: funEnabled } = useFunEffects();
+  const [category, setCategory] = useState<FoodCategory>('Foods');
   const [priceTier, setPriceTier] = useState<PriceTier>('all');
   const [reel, setReel] = useState<Food[]>([]);
   const [spinning, setSpinning] = useState(false);
@@ -106,9 +111,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const pool = useMemo(
     () =>
       foods.filter(
-        (f) =>
-          (category === 'All' || f.category === category) &&
-          inPriceTier(estimatePrice(f), priceTier),
+        (f) => f.category === category && inPriceTier(estimatePrice(f), priceTier),
       ),
     [foods, category, priceTier],
   );
@@ -186,6 +189,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     endTimerRef.current = setTimeout(() => {
       setSpinning(false);
       setResult(winner);
+      // Celebrate the winning pick with a Messenger-style emoji rain.
+      if (funEnabled) triggerRain([winner.category], 'full');
     }, 50 + SPIN_MS);
   };
 
@@ -197,7 +202,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     setIsTransitioning(false);
   };
 
-  const selectCategory = (c: CategoryFilter) => {
+  const selectCategory = (c: FoodCategory) => {
     if (spinning) return;
     setCategory(c);
     resetSpin();
@@ -220,13 +225,14 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         <h1 className="rnd-title">{t.random.title}</h1>
       </header>
 
-      <div className="rnd-chips" role="tablist" aria-label={t.home.categories.All}>
-        {CATEGORY_FILTERS.map((c) => (
+      <div className="rnd-chips" role="tablist" aria-label={t.random.categoryLabel}>
+        {FOOD_CATEGORIES.map((c) => (
           <button
             key={c}
             className={`chip ${category === c ? 'active' : ''}`}
             onClick={() => selectCategory(c)}
             disabled={spinning}
+            aria-pressed={category === c}
           >
             {t.home.categories[c]}
           </button>
@@ -367,6 +373,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         />
       )}
 
+      <EmojiRain bursts={bursts} />
+
       <style jsx>{`
         .random {
           padding: clamp(20px, 6vw, 32px) clamp(16px, 5vw, 20px) 40px;
@@ -408,6 +416,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         .price-block {
           position: relative;
           z-index: 2;
+          width: 100%;
+          max-width: 100%;
           margin: -8px 0 18px;
           background: var(--bg);
         }
@@ -422,18 +432,28 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           color: var(--text-faint);
         }
         .price-chips {
+          display: grid;
+          /* uneven tracks so longer ranges get the room they need */
+          grid-template-columns:
+            minmax(0, 0.85fr) minmax(0, 0.85fr) minmax(0, 1fr)
+            minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(0, 0.9fr);
+          gap: 4px;
           margin-bottom: 0;
+          width: 100%;
           flex-wrap: nowrap;
-          justify-content: flex-start;
-          overflow-x: auto;
-          padding-bottom: 2px;
-          scrollbar-width: none;
         }
-        .price-chips::-webkit-scrollbar {
-          display: none;
-        }
-        .price-chip {
-          flex: 0 0 auto;
+        .price-chips .price-chip {
+          width: 100%;
+          min-width: 0;
+          padding: 8px 3px;
+          font-size: clamp(9px, 2.9vw, 12.5px);
+          line-height: 1.15;
+          letter-spacing: -0.01em;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: block;
+          text-align: center;
         }
         .chip {
           padding: 9px 18px;

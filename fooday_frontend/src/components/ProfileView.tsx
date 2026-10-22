@@ -14,11 +14,13 @@ import {
   Check,
   Camera,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useUserReviews } from '@/hooks/useUserReviews';
+import { useFunEffects } from '@/hooks/useFunEffects';
 import ThemeToggle from './ThemeToggle';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -38,6 +40,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const { user, signOut, updateProfile } = useAuth();
   const { t, lang, setLang } = useTranslation();
   const userReviews = useUserReviews(user?.id ?? null);
+  const { enabled: funEnabled, toggle: toggleFunEffects } = useFunEffects();
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
   const [langOpen, setLangOpen] = useState(false);
@@ -143,6 +146,16 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
               onClick={() => setLangOpen((open) => !open)}
             >
               <Globe size={19} />
+            </button>
+            <button
+              type="button"
+              className={`lang-trigger ${funEnabled ? 'is-on' : ''}`}
+              aria-label={t.profile.funEffects}
+              aria-pressed={funEnabled}
+              title={t.profile.funEffects}
+              onClick={toggleFunEffects}
+            >
+              <Sparkles size={19} />
             </button>
             <ThemeToggle variant="onPrimary" />
             {langOpen && (
@@ -403,6 +416,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           z-index: 3;
         }
         .lang-trigger {
+          position: relative;
           width: 44px;
           height: 44px;
           border-radius: var(--r-full);
@@ -420,6 +434,22 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           background: rgba(255, 255, 255, 0.26);
           border-color: rgba(255, 255, 255, 0.5);
           transform: translateY(-2px);
+        }
+        .lang-trigger.is-on {
+          background: rgba(255, 255, 255, 0.34);
+          border-color: rgba(255, 255, 255, 0.7);
+          color: #fff;
+        }
+        .lang-trigger.is-on::after {
+          content: '';
+          position: absolute;
+          top: 6px;
+          right: 6px;
+          width: 6px;
+          height: 6px;
+          border-radius: var(--r-full);
+          background: #fff;
+          box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.9);
         }
         .lang-trigger:active {
           transform: scale(0.94);
