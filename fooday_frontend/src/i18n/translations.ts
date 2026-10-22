@@ -109,6 +109,7 @@ const vi = {
     foodayMember: 'Thành viên Fooday',
     statFavorites: 'Yêu thích',
     statDishes: 'Món đã thêm',
+    statReviews: 'Đánh giá',
     statPoints: 'Điểm thưởng',
     tabFavorites: 'Yêu thích',
     tabHistory: 'Lịch sử',
@@ -181,6 +182,20 @@ const vi = {
     uploadFailed: 'Tải ảnh lên thất bại.',
     postFailed: 'Không gửi được đánh giá. Bạn thử lại nhé.',
     cooldown: (date: string) => `Bạn đã đánh giá quán này. Có thể đánh giá lại sau ${date}.`,
+    photoHint: (current: number, max: number) =>
+      current === 0
+        ? `Thêm tối đa ${max} ảnh — mỗi ảnh nhận thêm điểm thưởng!`
+        : `Đã thêm ${current}/${max} ảnh — thêm ảnh để nhận thêm điểm thưởng!`,
+    maxPhotos: (max: number) => `Mỗi đánh giá chỉ được thêm tối đa ${max} ảnh.`,
+    viewPhoto: 'Xem ảnh',
+    closePhoto: 'Đóng ảnh',
+  },
+  authPromptModal: {
+    title: 'Đăng nhập để lưu món yêu thích',
+    description:
+      'Tạo tài khoản hoặc đăng nhập để lưu lại các quán ăn yêu thích của bạn và tích luỹ điểm thưởng!',
+    signIn: 'Đăng nhập / Đăng ký',
+    later: 'Để sau',
   },
   map: {
     googleMapLabel: 'Link Google Maps',
@@ -372,6 +387,7 @@ const en: Translation = {
     foodayMember: 'Fooday Member',
     statFavorites: 'Favorites',
     statDishes: 'Dishes',
+    statReviews: 'Reviews',
     statPoints: 'Points',
     tabFavorites: 'Favorites',
     tabHistory: 'History',
@@ -445,6 +461,20 @@ const en: Translation = {
     uploadFailed: 'Could not upload the photo.',
     postFailed: "Couldn't post your review. Please try again.",
     cooldown: (date: string) => `You already reviewed this place. You can review it again after ${date}.`,
+    photoHint: (current: number, max: number) =>
+      current === 0
+        ? `Add up to ${max} photos — each one earns extra reward points!`
+        : `${current}/${max} photos added — add more to earn extra reward points!`,
+    maxPhotos: (max: number) => `A review can carry at most ${max} photos.`,
+    viewPhoto: 'View photo',
+    closePhoto: 'Close photo',
+  },
+  authPromptModal: {
+    title: 'Sign in to save favorites',
+    description:
+      'Create an account or sign in to save the places you love and collect reward points!',
+    signIn: 'Sign in / Sign up',
+    later: 'Maybe later',
   },
   map: {
     googleMapLabel: 'Google Maps Link',

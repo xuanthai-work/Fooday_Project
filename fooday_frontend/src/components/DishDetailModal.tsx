@@ -24,6 +24,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useReviews } from '@/hooks/useReviews';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { parseHashtags } from '@/lib/hashtags';
+import { MAX_REVIEW_PHOTOS, parseReviewPhotos } from '@/lib/reviewPhotos';
 import {
   distanceToBranch,
   findNearestBranch,
@@ -47,7 +48,7 @@ export default function DishDetailModal({
 }: DishDetailModalProps) {
   const { t, lang } = useTranslation();
   const { user } = useAuth();
-  const { favorites, toggleFavorite } = useFavorites();
+  const { favorites, toggleFavorite, showAuthPrompt } = useFavorites();
   const [currentDish, setCurrentDish] = useState<Food>(dish);
   const { reviews, loading: reviewsLoading, addReview, deleteReview, totalCount, averageRating, blockedUntil } =
     useReviews(currentDish.id);
@@ -61,12 +62,13 @@ export default function DishDetailModal({
   const [loginHint, setLoginHint] = useState(false);
   const [draftRating, setDraftRating] = useState(5);
   const [comment, setComment] = useState('');
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [activeImgIndex, setActiveImgIndex] = useState(0);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const closingRef = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
@@ -180,7 +182,14 @@ export default function DishDetailModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isEditing) handleClose();
+      if (e.key !== 'Escape') return;
+      if (lightboxSrc) {
+        setLightboxSrc(null);
+        return;
+      }
+      // The sign-in prompt owns the Escape key while it is open.
+      if (showAuthPrompt) return;
+      if (!isEditing) handleClose();
     };
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -189,7 +198,7 @@ export default function DishDetailModal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [handleClose, isEditing]);
+  }, [handleClose, isEditing, lightboxSrc, showAuthPrompt]);
 
   useEffect(() => {
     if (!loginHint) return;
@@ -221,23 +230,43 @@ export default function DishDetailModal({
   };
 
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (!file || !user) return;
+    if (!files.length || !user) return;
+
+    const room = MAX_REVIEW_PHOTOS - photoUrls.length;
+    if (room <= 0) {
+      setFormError(t.reviews.maxPhotos(MAX_REVIEW_PHOTOS));
+      return;
+    }
+
+    const picked = files.slice(0, room);
     setUploading(true);
     setFormError(null);
     try {
-      const safe = file.name.replace(/[^a-zA-Z0-9.]+/g, '-');
-      const path = `${user.id}/${Date.now()}-${safe}`;
-      const { error } = await supabase.storage.from('review-images').upload(path, file);
-      if (error) throw error;
-      const { data } = supabase.storage.from('review-images').getPublicUrl(path);
-      setPhotoUrl(data.publicUrl);
+      const uploaded: string[] = [];
+      for (let i = 0; i < picked.length; i += 1) {
+        const file = picked[i];
+        const safe = file.name.replace(/[^a-zA-Z0-9.]+/g, '-');
+        const path = `${user.id}/${Date.now()}-${i}-${safe}`;
+        const { error } = await supabase.storage.from('review-images').upload(path, file);
+        if (error) throw error;
+        const { data } = supabase.storage.from('review-images').getPublicUrl(path);
+        uploaded.push(data.publicUrl);
+      }
+      setPhotoUrls((prev) => [...prev, ...uploaded].slice(0, MAX_REVIEW_PHOTOS));
+      if (files.length > picked.length) {
+        setFormError(t.reviews.maxPhotos(MAX_REVIEW_PHOTOS));
+      }
     } catch {
       setFormError(t.reviews.uploadFailed);
     } finally {
       setUploading(false);
     }
+  };
+
+  const removePhoto = (url: string) => {
+    setPhotoUrls((prev) => prev.filter((item) => item !== url));
   };
 
   const handleEdit = () => {
@@ -253,11 +282,11 @@ export default function DishDetailModal({
     if (!comment.trim() || posting || uploading || blockedUntil) return;
     setPosting(true);
     setFormError(null);
-    const result = await addReview(draftRating, comment, photoUrl);
+    const result = await addReview(draftRating, comment, photoUrls);
     if (result === 'ok') {
       setComment('');
       setDraftRating(5);
-      setPhotoUrl(null);
+      setPhotoUrls([]);
     } else if (result === 'cooldown') {
       setFormError(t.reviews.cooldown(formatCooldownDate(blockedUntil ?? new Date())));
     } else if (result !== 'empty') {
@@ -731,32 +760,42 @@ export default function DishDetailModal({
                       value={comment}
                       onChange={(e) => setComment(e.target.value)}
                     />
-                    {photoUrl && (
-                      <div className="photo-preview">
-                        <Image
-                          src={photoUrl}
-                          alt=""
-                          width={88}
-                          height={88}
-                          className="photo-preview-img"
-                        />
-                        <button
-                          type="button"
-                          className="photo-remove"
-                          onClick={() => setPhotoUrl(null)}
-                          aria-label={t.reviews.removePhoto}
-                        >
-                          <X size={14} />
-                        </button>
+                    {photoUrls.length > 0 && (
+                      <div className="photo-preview-grid">
+                        {photoUrls.map((url) => (
+                          <div key={url} className="photo-preview">
+                            <Image
+                              src={url}
+                              alt=""
+                              width={88}
+                              height={88}
+                              className="photo-preview-img"
+                            />
+                            <button
+                              type="button"
+                              className="photo-remove"
+                              onClick={() => removePhoto(url)}
+                              aria-label={t.reviews.removePhoto}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
+                    <p className="photo-hint">
+                      {t.reviews.photoHint(
+                        photoUrls.length,
+                        MAX_REVIEW_PHOTOS,
+                      )}
+                    </p>
                     {formError && <p className="form-error">{formError}</p>}
                     <div className="composer-actions">
                       <button
                         type="button"
                         className="photo-btn"
                         onClick={() => fileRef.current?.click()}
-                        disabled={uploading || posting}
+                        disabled={uploading || posting || photoUrls.length >= MAX_REVIEW_PHOTOS}
                       >
                         <ImagePlus size={16} />
                         {uploading ? t.reviews.photoUploading : t.reviews.addPhoto}
@@ -765,6 +804,7 @@ export default function DishDetailModal({
                         ref={fileRef}
                         type="file"
                         accept="image/*"
+                        multiple
                         hidden
                         onChange={handlePhoto}
                       />
@@ -789,52 +829,91 @@ export default function DishDetailModal({
                 </div>
               ) : (
                 <ul className="review-list">
-                  {reviews.map((r) => (
-                    <li key={r.id} className="review-item">
-                      <div className="avatar" aria-hidden="true">
-                        {(r.user_name[0] || '?').toUpperCase()}
-                      </div>
-                      <div className="review-body">
-                        <div className="review-top">
-                          <span className="review-name">{r.user_name}</span>
-                          <span className="review-time">{formatTime(r.created_at)}</span>
+                  {reviews.map((r) => {
+                    const photos = parseReviewPhotos(r.image_url);
+                    return (
+                      <li key={r.id} className="review-item">
+                        <div className="avatar" aria-hidden="true">
+                          {(r.user_name[0] || '?').toUpperCase()}
                         </div>
-                        {stars(r.rating, 13)}
-                        <p className="review-text">{r.comment}</p>
-                        {r.image_url && (
-                          <a
-                            className="review-photo"
-                            href={r.image_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <div className="review-body">
+                          <div className="review-top">
+                            <span className="review-name">{r.user_name}</span>
+                            <span className="review-time">{formatTime(r.created_at)}</span>
+                          </div>
+                          {stars(r.rating, 13)}
+                          <p className="review-text">{r.comment}</p>
+                          {photos.length > 0 && (
+                            <div className={`review-gallery ${photos.length > 1 ? 'is-grid' : ''}`}>
+                              {photos.map((src) => (
+                                <button
+                                  key={src}
+                                  type="button"
+                                  className="review-photo"
+                                  onClick={() => setLightboxSrc(src)}
+                                  aria-label={t.reviews.viewPhoto}
+                                >
+                                  <Image
+                                    src={src}
+                                    alt=""
+                                    width={220}
+                                    height={160}
+                                    className="review-photo-img"
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {user && r.user_id === user.id && (
+                          <button
+                            className="review-del"
+                            onClick={() => deleteReview(r.id)}
+                            aria-label={t.reviews.delete}
                           >
-                            <Image
-                              src={r.image_url}
-                              alt=""
-                              width={220}
-                              height={160}
-                              className="review-photo-img"
-                            />
-                          </a>
+                            {t.reviews.delete}
+                          </button>
                         )}
-                      </div>
-                      {user && r.user_id === user.id && (
-                        <button
-                          className="review-del"
-                          onClick={() => deleteReview(r.id)}
-                          aria-label={t.reviews.delete}
-                        >
-                          {t.reviews.delete}
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </section>
           </div>
         </div>
       </div>
+
+      {lightboxSrc && (
+        <div
+          className="lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.reviews.viewPhoto}
+          onClick={(e) => {
+            e.stopPropagation();
+            setLightboxSrc(null);
+          }}
+        >
+          <button
+            type="button"
+            className="lightbox-close"
+            onClick={() => setLightboxSrc(null)}
+            aria-label={t.reviews.closePhoto}
+          >
+            <X size={18} />
+          </button>
+          <div className="lightbox-frame" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={lightboxSrc}
+              alt=""
+              fill
+              sizes="(max-width: 640px) 92vw, 900px"
+              style={{ objectFit: 'contain' }}
+            />
+          </div>
+        </div>
+      )}
 
       {isEditing && (
         <EditDishModal
@@ -1609,6 +1688,11 @@ export default function DishDetailModal({
           opacity: 0.55;
           cursor: not-allowed;
         }
+        .photo-preview-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
         .photo-preview {
           position: relative;
           width: 88px;
@@ -1616,6 +1700,12 @@ export default function DishDetailModal({
           border-radius: var(--r-sm);
           overflow: hidden;
           border: 1px solid var(--border);
+        }
+        .photo-hint {
+          margin: 0;
+          font-size: 0.75rem;
+          line-height: 1.4;
+          color: var(--text-faint);
         }
         .photo-remove {
           position: absolute;
@@ -1647,13 +1737,75 @@ export default function DishDetailModal({
         .form-error {
           color: var(--heart);
         }
+        .review-gallery {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 8px;
+        }
         .review-photo {
           display: block;
+          padding: 0;
           width: min(100%, 220px);
-          margin-top: 8px;
+          aspect-ratio: 4 / 3;
           border-radius: var(--r-sm);
           overflow: hidden;
           border: 1px solid var(--border);
+          background: var(--surface-2);
+          cursor: pointer;
+          transition: transform var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .review-gallery.is-grid .review-photo {
+          width: calc(50% - 4px);
+          max-width: 160px;
+        }
+        .review-photo:hover {
+          transform: translateY(-2px);
+          border-color: var(--primary);
+        }
+        .review-photo-img {
+          display: block;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        /* Lightbox — full-size preview of a review photo. */
+        .lightbox {
+          position: absolute;
+          inset: 0;
+          z-index: 20;
+          display: grid;
+          place-items: center;
+          padding: 20px;
+          background: rgba(20, 14, 10, 0.88);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          animation: overlayIn 0.2s ease both;
+        }
+        .lightbox-frame {
+          position: relative;
+          width: min(900px, 100%);
+          height: min(76dvh, 720px);
+        }
+        .lightbox-close {
+          position: absolute;
+          top: 14px;
+          right: 14px;
+          z-index: 2;
+          width: 40px;
+          height: 40px;
+          display: grid;
+          place-items: center;
+          border: none;
+          border-radius: var(--r-full);
+          background: rgba(255, 255, 255, 0.18);
+          color: #fff;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease);
+        }
+        .lightbox-close:hover {
+          background: rgba(255, 255, 255, 0.32);
         }
         .post-btn {
           height: 40px;

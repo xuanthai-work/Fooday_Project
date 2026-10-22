@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from './useAuth';
+import AuthPromptModal from '@/components/AuthPromptModal';
 
 interface FavoritesContextValue {
   /** Set of favorited food ids for the current user. */
@@ -19,12 +20,18 @@ interface FavoritesContextValue {
   toggleFavorite: (foodId: number) => Promise<void>;
   /** True once the initial favorites load has settled for the active session. */
   ready: boolean;
+  /** True while the "sign in to save favorites" prompt is open. */
+  showAuthPrompt: boolean;
+  /** Open or close the sign-in prompt. */
+  setShowAuthPrompt: (open: boolean) => void;
 }
 
 const FavoritesContext = createContext<FavoritesContextValue>({
   favorites: new Set(),
   toggleFavorite: async () => {},
   ready: false,
+  showAuthPrompt: false,
+  setShowAuthPrompt: () => {},
 });
 
 /**
@@ -39,6 +46,11 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
   const userId = user?.id ?? null;
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [ready, setReady] = useState(false);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+
+  // A guest session (anonymous user, or an account without an email) cannot
+  // own favorites — it is asked to sign in instead.
+  const isGuest = !user || Boolean(user.is_anonymous) || !user.email;
 
   // Latest favorites for toggleFavorite without re-creating the callback.
   const favoritesRef = useRef(favorites);
@@ -52,7 +64,8 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
 
     const load = async () => {
       if (!active) return;
-      if (!id) {
+      if (!id || isGuest) {
+        // Guests have no favorites of their own — nothing to load.
         setFavorites(new Set());
         setReady(true);
         return;
@@ -73,7 +86,7 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
 
     // Exactly one Realtime channel per user session, owned here.
     let channel: ReturnType<typeof supabase.channel> | null = null;
-    if (id) {
+    if (id && !isGuest) {
       channel = supabase
         .channel(`favorites:${id}`)
         .on(
@@ -91,11 +104,15 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timer);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [userId]);
+  }, [userId, isGuest]);
 
   const toggleFavorite = useCallback(
     async (foodId: number) => {
-      if (!userId) return;
+      if (!userId || isGuest) {
+        // Guests never touch the favorites table — they get asked to sign in.
+        setShowAuthPrompt(true);
+        return;
+      }
       const isFav = favoritesRef.current.has(foodId);
 
       // optimistic update; Realtime reconciles afterwards
@@ -113,15 +130,20 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
         await supabase.from('favorites').insert({ food_id: foodId });
       }
     },
-    [userId],
+    [userId, isGuest],
   );
 
   const value = useMemo<FavoritesContextValue>(
-    () => ({ favorites, toggleFavorite, ready }),
-    [favorites, toggleFavorite, ready],
+    () => ({ favorites, toggleFavorite, ready, showAuthPrompt, setShowAuthPrompt }),
+    [favorites, toggleFavorite, ready, showAuthPrompt],
   );
 
-  return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;
+  return (
+    <FavoritesContext.Provider value={value}>
+      {children}
+      <AuthPromptModal open={showAuthPrompt} onClose={() => setShowAuthPrompt(false)} />
+    </FavoritesContext.Provider>
+  );
 }
 
 /** Access the shared favorites store (must be under FavoritesProvider). */

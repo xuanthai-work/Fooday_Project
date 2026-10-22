@@ -18,11 +18,13 @@ import {
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
+import { useUserReviews } from '@/hooks/useUserReviews';
 import ThemeToggle from './ThemeToggle';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { LANGUAGES } from '@/i18n/translations';
+import { calculateReviewPoints } from '@/lib/reviewPhotos';
 import DishDetailModal from './DishDetailModal';
 
 interface ProfileViewProps {
@@ -35,6 +37,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const { favorites } = useFavorites();
   const { user, signOut, updateProfile } = useAuth();
   const { t, lang, setLang } = useTranslation();
+  const userReviews = useUserReviews(user?.id ?? null);
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
   const [langOpen, setLangOpen] = useState(false);
@@ -68,7 +71,13 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const displayName = isGuest ? t.profile.guest : user?.email?.split('@')[0] || t.profile.guest;
   const initial = displayName.charAt(0).toUpperCase();
   const dishesAdded = user?.id ? foods.filter((f) => f.created_by === user.id).length : 0;
-  const points = favoriteItems.length * 5 + dishesAdded * 25;
+  // Reward points: 5 per favorite, 25 per dish added, and every review is
+  // worth 5 points plus a bonus for the photos it carries.
+  const reviewPoints = userReviews.reduce(
+    (sum, review) => sum + calculateReviewPoints(review.image_url),
+    0,
+  );
+  const points = favoriteItems.length * 5 + dishesAdded * 25 + reviewPoints;
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
     : null;
@@ -233,6 +242,11 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
         <div className="stat">
           <span className="stat-num">{dishesAdded}</span>
           <span className="stat-label">{t.profile.statDishes}</span>
+        </div>
+        <span className="stat-divider" />
+        <div className="stat">
+          <span className="stat-num">{userReviews.length}</span>
+          <span className="stat-label">{t.profile.statReviews}</span>
         </div>
         <span className="stat-divider" />
         <div className="stat">
@@ -640,6 +654,16 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           font-size: 0.71875rem;
           color: var(--text-soft);
           font-weight: 500;
+          white-space: nowrap;
+        }
+        /* Four stats now live in the bar — keep them readable on small phones. */
+        @media (max-width: 420px) {
+          .stats {
+            padding: 16px 6px;
+          }
+          .stat-label {
+            font-size: 0.625rem;
+          }
         }
         .stat-divider {
           width: 1px;

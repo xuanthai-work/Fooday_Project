@@ -6,6 +6,7 @@ import { useAuth } from './useAuth';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { refreshReviewStats } from './useReviewStats';
 import { refreshFoods } from './useFoods';
+import { serializeReviewPhotos } from '@/lib/reviewPhotos';
 
 export interface Review {
   id: number;
@@ -127,10 +128,18 @@ export function useReviews(foodId: number) {
   const blockedUntil = cooldownUntil(reviews, user?.id ?? null, limitAt);
 
   const addReview = useCallback(
-    async (rating: number, comment: string, imageUrl?: string | null): Promise<ReviewPostResult> => {
+    async (
+      rating: number,
+      comment: string,
+      imageUrl?: string | string[] | null,
+    ): Promise<ReviewPostResult> => {
       const text = comment.trim();
       if (!text) return 'empty';
       if (cooldownUntil(reviews, user?.id ?? null, limitAt)) return 'cooldown';
+
+      // One photo -> plain URL, several -> JSON array in the same column.
+      const photos = Array.isArray(imageUrl) ? imageUrl : imageUrl ? [imageUrl] : [];
+      const serialized = serializeReviewPhotos(photos);
 
       const userName = user?.email ? user.email.split('@')[0] : t.reviews.guestName;
       const tempId = -Date.now();
@@ -141,7 +150,7 @@ export function useReviews(foodId: number) {
         user_name: userName,
         rating,
         comment: text,
-        image_url: imageUrl || null,
+        image_url: serialized,
         created_at: new Date().toISOString(),
       };
 
@@ -154,12 +163,12 @@ export function useReviews(foodId: number) {
         rating,
         comment: text,
       };
-      if (imageUrl) payload.image_url = imageUrl;
+      if (serialized) payload.image_url = serialized;
 
       let inserted = await supabase.from('reviews').insert(payload).select(COLUMNS).single();
       if (
         inserted.error &&
-        !imageUrl &&
+        !serialized &&
         !inserted.error.message.includes('review_cooldown') &&
         /image_url/i.test(inserted.error.message)
       ) {
@@ -176,7 +185,7 @@ export function useReviews(foodId: number) {
       const row = inserted.data as Review;
       const saved: Review = {
         ...row,
-        image_url: row.image_url ?? imageUrl ?? null,
+        image_url: row.image_url ?? serialized,
       };
       setReviews((prev) => prev.map((r) => (r.id === tempId ? saved : r)));
       setLimitAt(saved.created_at);
