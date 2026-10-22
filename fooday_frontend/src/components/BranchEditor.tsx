@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, Loader2 } from 'lucide-react';
+import { X, Plus, Loader2, MapPin } from 'lucide-react';
 import { mapService } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { isGoogleMapsUrl } from '@/lib/maps';
@@ -10,6 +10,7 @@ import { extractCoordsFromUrl } from '@/lib/geo';
 /** A branch being edited inside the Add/Edit dish forms. */
 export interface BranchDraft {
   id: string;
+  /** Kept for backward compatibility with older rows — not shown in the UI. */
   name: string;
   googleMapUrl: string;
   address: string;
@@ -34,14 +35,26 @@ export function createBranchDraft(): BranchDraft {
   };
 }
 
+/** True when the branch already carries a usable piece of information. */
+function hasContent(branch: BranchDraft): boolean {
+  return Boolean(branch.address.trim() || branch.googleMapUrl.trim());
+}
+
 /**
- * Editor for the extra outlets of a restaurant. Each row holds a name, a
- * Google Maps link (the address and the coordinates are parsed out of it
- * automatically) and the address itself.
+ * Editor for the extra outlets of a restaurant. Every outlet of a restaurant
+ * shares the same name, so a branch is only identified by its position
+ * ("Cơ sở 1", "Cơ sở 2", ...) and carries a Google Maps link (the address and
+ * the coordinates are parsed out of it automatically) plus the address itself.
+ *
+ * The editor works like an accordion: only one branch is expanded at a time,
+ * every other one collapses into a single summary row so the form never grows
+ * into a long scroll.
  */
 export default function BranchEditor({ branches, onChange }: BranchEditorProps) {
   const { t } = useTranslation();
   const [resolving, setResolving] = useState<Record<string, boolean>>({});
+  // The single branch currently open for editing.
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const seqRef = useRef<Record<string, number>>({});
 
@@ -97,10 +110,17 @@ export default function BranchEditor({ branches, onChange }: BranchEditorProps) 
           return Object.keys(patch).length > 0 ? { ...b, ...patch } : b;
         }),
       );
+      // The outlet is filled in — fold it away so the form stays compact.
+      setActiveBranchId((current) => (current === id ? null : current));
     }, 500);
   };
 
-  const addBranch = () => onChange((prev) => [...prev, createBranchDraft()]);
+  const addBranch = () => {
+    const draft = createBranchDraft();
+    onChange((prev) => [...prev, draft]);
+    // The brand new outlet is the one being filled in.
+    setActiveBranchId(draft.id);
+  };
 
   const removeBranch = (id: string) => {
     const pending = timersRef.current[id];
@@ -109,71 +129,123 @@ export default function BranchEditor({ branches, onChange }: BranchEditorProps) 
       delete timersRef.current[id];
     }
     onChange((prev) => prev.filter((b) => b.id !== id));
+    setActiveBranchId((current) => (current === id ? null : current));
   };
 
   return (
     <div className="branch-editor">
       {branches.length > 0 && (
         <ul className="branch-rows">
-          {branches.map((branch, index) => (
-            <li key={branch.id} className="branch-row">
-              <div className="branch-row-head">
-                <span className="branch-row-title">
-                  {branch.name || `${t.branches.branchNameLabel} ${index + 1}`}
-                </span>
-                <button
-                  type="button"
-                  className="branch-remove"
-                  onClick={() => removeBranch(branch.id)}
-                  aria-label={t.branches.removeBranch}
-                  title={t.branches.removeBranch}
-                >
-                  <X size={14} />
-                </button>
-              </div>
+          {branches.map((branch, index) => {
+            const isActive = branch.id === activeBranchId;
+            const summary =
+              branch.address.trim() ||
+              branch.googleMapUrl.trim() ||
+              t.branches.emptyBranch;
 
-              <label className="field">
-                <span className="label">{t.branches.branchNameLabel}</span>
-                <input
-                  value={branch.name}
-                  onChange={(e) => update(branch.id, { name: e.target.value })}
-                  placeholder={t.branches.branchNamePlaceholder}
-                  aria-label={t.branches.branchNameLabel}
-                />
-              </label>
+            return (
+              <li key={branch.id} className={`branch-row ${isActive ? 'is-active' : ''}`}>
+                {isActive ? (
+                  <>
+                    <div className="branch-row-head">
+                      <span className="branch-row-title">
+                        <MapPin size={13} />
+                        {t.branches.branchTitle(index + 1)}
+                      </span>
+                      <div className="branch-row-actions">
+                        <button
+                          type="button"
+                          className="branch-collapse"
+                          onClick={() => setActiveBranchId(null)}
+                          aria-label={t.branches.collapseBranch}
+                          title={t.branches.collapseBranch}
+                        >
+                          {hasContent(branch)
+                            ? t.branches.doneBranch
+                            : t.branches.collapseBranch}
+                        </button>
+                        <button
+                          type="button"
+                          className="branch-remove"
+                          onClick={() => removeBranch(branch.id)}
+                          aria-label={t.branches.removeBranch}
+                          title={t.branches.removeBranch}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
 
-              <label className="field">
-                <span className="label">{t.map.googleMapLabel}</span>
-                <input
-                  value={branch.googleMapUrl}
-                  onChange={(e) => handleMapUrlChange(branch.id, e.target.value)}
-                  placeholder={t.branches.branchMapPlaceholder}
-                  inputMode="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-label={t.map.googleMapLabel}
-                />
-              </label>
+                    <label className="field">
+                      <span className="label">{t.map.googleMapLabel}</span>
+                      <input
+                        value={branch.googleMapUrl}
+                        onChange={(e) => handleMapUrlChange(branch.id, e.target.value)}
+                        placeholder={t.branches.branchMapPlaceholder}
+                        inputMode="url"
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-label={t.map.googleMapLabel}
+                      />
+                    </label>
 
-              <label className="field">
-                <span className="label">{t.branches.branchAddressLabel}</span>
-                <input
-                  value={branch.address}
-                  onChange={(e) => update(branch.id, { address: e.target.value })}
-                  placeholder={t.map.addressPlaceholder}
-                  disabled={Boolean(resolving[branch.id])}
-                  aria-busy={Boolean(resolving[branch.id])}
-                  aria-label={t.branches.branchAddressLabel}
-                />
-                {resolving[branch.id] && (
-                  <span className="field-hint resolving-hint">
-                    <Loader2 size={13} className="spin" />
-                    {t.map.resolvingAddress}
-                  </span>
+                    <label className="field">
+                      <span className="label">{t.branches.branchAddressLabel}</span>
+                      <input
+                        value={branch.address}
+                        onChange={(e) => update(branch.id, { address: e.target.value })}
+                        placeholder={t.map.addressPlaceholder}
+                        disabled={Boolean(resolving[branch.id])}
+                        aria-busy={Boolean(resolving[branch.id])}
+                        aria-label={t.branches.branchAddressLabel}
+                      />
+                      {resolving[branch.id] && (
+                        <span className="field-hint resolving-hint">
+                          <Loader2 size={13} className="spin" />
+                          {t.map.resolvingAddress}
+                        </span>
+                      )}
+                    </label>
+                  </>
+                ) : (
+                  <div className="branch-row-head">
+                    <button
+                      type="button"
+                      className="branch-summary"
+                      onClick={() => setActiveBranchId(branch.id)}
+                      aria-label={`${t.branches.editBranch}: ${t.branches.branchTitle(index + 1)}`}
+                      title={`${t.branches.editBranch}: ${summary}`}
+                    >
+                      <MapPin size={13} />
+                      <span className="branch-row-title">
+                        {t.branches.branchTitle(index + 1)}: {summary}
+                      </span>
+                    </button>
+                    <div className="branch-row-actions">
+                      <button
+                        type="button"
+                        className="branch-collapse"
+                        onClick={() => setActiveBranchId(branch.id)}
+                        aria-label={t.branches.editBranch}
+                        title={t.branches.editBranch}
+                      >
+                        {t.branches.editBranch}
+                      </button>
+                      <button
+                        type="button"
+                        className="branch-remove"
+                        onClick={() => removeBranch(branch.id)}
+                        aria-label={t.branches.removeBranch}
+                        title={t.branches.removeBranch}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
                 )}
-              </label>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -194,16 +266,22 @@ export default function BranchEditor({ branches, onChange }: BranchEditorProps) 
           padding: 0;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 8px;
         }
         .branch-row {
           display: flex;
           flex-direction: column;
           gap: 10px;
-          padding: 12px;
+          padding: 10px 12px;
           border-radius: var(--r-md);
           border: 1px solid var(--border);
           background: var(--surface-2);
+          transition: border-color var(--dur-fast) var(--ease),
+            background var(--dur-fast) var(--ease);
+        }
+        .branch-row.is-active {
+          border-color: var(--primary-soft-2);
+          background: var(--surface);
         }
         .branch-row-head {
           display: flex;
@@ -212,6 +290,9 @@ export default function BranchEditor({ branches, onChange }: BranchEditorProps) 
           gap: 8px;
         }
         .branch-row-title {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
           font-size: 13px;
           font-weight: 700;
           color: var(--text);
@@ -219,6 +300,54 @@ export default function BranchEditor({ branches, onChange }: BranchEditorProps) 
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+        .branch-row-title :global(svg) {
+          flex-shrink: 0;
+          color: var(--primary-strong);
+        }
+        .branch-summary {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          flex: 1;
+          min-width: 0;
+          padding: 0;
+          border: none;
+          background: transparent;
+          font-family: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+        .branch-summary .branch-row-title {
+          font-weight: 600;
+          color: var(--text-soft);
+        }
+        .branch-summary:hover .branch-row-title {
+          color: var(--primary-strong);
+        }
+        .branch-row-actions {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+        .branch-collapse {
+          height: 28px;
+          padding: 0 10px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border-strong);
+          background: var(--surface);
+          color: var(--text-soft);
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+        }
+        .branch-collapse:hover {
+          border-color: var(--primary);
+          color: var(--primary-strong);
         }
         .branch-remove {
           display: grid;

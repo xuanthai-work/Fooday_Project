@@ -2,10 +2,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { X, Upload, Loader2 } from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
+import { X, Upload, Star, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
-import { refreshFoods, Food, FoodCategory, FOOD_CATEGORIES } from '@/hooks/useFoods';
+import { refreshFoods, Food, FoodCategory, FOOD_CATEGORIES, Contributor, parseContributors } from '@/hooks/useFoods';
 import { dishImageService, mapService, DishImage } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, parseHashtags, serializeHashtags } from '@/lib/hashtags';
@@ -22,6 +23,30 @@ interface EditDishModalProps {
   onUpdated?: (updated: Food) => void;
 }
 
+/**
+ * GitHub-style contributor list of a dish: everybody who edited it besides
+ * its creator. The creator keeps living in `created_by`.
+ */
+function buildContributors(dish: Food, user: User | null): Contributor[] {
+  const list = parseContributors(dish.contributors);
+  if (!user) return list;
+  // The creator never shows up as a contributor of their own dish.
+  if (dish.created_by && dish.created_by === user.id) return list;
+
+  const entry: Contributor = {
+    id: user.id,
+    name: user.email?.split('@')[0] || 'User',
+    avatar_url: (user.user_metadata?.avatar_url as string | undefined) || '',
+    updated_at: new Date().toISOString(),
+  };
+
+  const index = list.findIndex((contributor) => contributor.id === user.id);
+  if (index === -1) return [...list, entry];
+  const next = [...list];
+  next[index] = { ...next[index], ...entry };
+  return next;
+}
+
 export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModalProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -36,6 +61,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   const [selectedTags, setSelectedTags] = useState<string[]>(() => parseHashtags(dish.tag));
   const [tagInput, setTagInput] = useState('');
   const [reviewNote, setReviewNote] = useState(dish.review_note ?? '');
+  const [rating, setRating] = useState(Number(dish.rating ?? 5));
   const [imageList, setImageList] = useState<string[]>(
     dish.images && dish.images.length > 0
       ? dish.images
@@ -206,24 +232,45 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
       }))
       .filter((branch) => branch.name || branch.address || branch.google_map_url);
 
-    const { data, error: updErr } = await supabase
+    const basePayload = {
+      name: name.trim(),
+      restaurant: restaurant.trim(),
+      category,
+      rating,
+      address: address.trim() || null,
+      google_map_url: googleMapUrl.trim() || null,
+      opening_time: openingTime.trim() || null,
+      tag: finalTag || null,
+      review_note: reviewNote.trim() || null,
+      image_url: imageList[0] || dish.image_url || '',
+      images: imageList,
+      branches: cleanBranches.length > 0 ? cleanBranches : null,
+    };
+
+    // Who helped build this dish.
+    const payload = {
+      ...basePayload,
+      contributors: buildContributors(dish, user),
+    };
+
+    let { data, error: updErr } = await supabase
       .from('foods')
-      .update({
-        name: name.trim(),
-        restaurant: restaurant.trim(),
-        category,
-        address: address.trim() || null,
-        google_map_url: googleMapUrl.trim() || null,
-        opening_time: openingTime.trim() || null,
-        tag: finalTag || null,
-        review_note: reviewNote.trim() || null,
-        image_url: imageList[0] || dish.image_url || '',
-        images: imageList,
-        branches: cleanBranches.length > 0 ? cleanBranches : null,
-      })
+      .update(payload)
       .eq('id', dish.id)
       .select()
       .single();
+
+    if (updErr && /contributors/i.test(updErr.message)) {
+      // The `contributors` column is not migrated yet — save without it.
+      const retry = await supabase
+        .from('foods')
+        .update(basePayload)
+        .eq('id', dish.id)
+        .select()
+        .single();
+      data = retry.data;
+      updErr = retry.error;
+    }
 
     if (updErr) {
       setError(updErr.message);
@@ -344,6 +391,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             )}
           </div>
 
+          {/* Restaurant */}
           <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
             <span className="label">{t.editDish.restaurant}</span>
             <input
@@ -351,6 +399,46 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
               onChange={(e) => setRestaurant(e.target.value)}
               placeholder={t.addDish.restaurantPlaceholder}
               required
+            />
+          </label>
+
+          {/* Dish name */}
+          <div className="field">
+            <span className="label">{t.editDish.dishName}</span>
+            <DishNameAutocomplete
+              value={name}
+              onChange={setName}
+              placeholder={t.addDish.dishNamePlaceholder}
+              required
+              aria-label={t.editDish.dishName}
+            />
+          </div>
+
+          {/* Category */}
+          <div className="field">
+            <span className="label">{t.editDish.category}</span>
+            <div className="chips">
+              {FOOD_CATEGORIES.map((c) => (
+                <button
+                  type="button"
+                  key={c}
+                  className={`chip ${category === c ? 'active' : ''}`}
+                  onClick={() => setCategory(c)}
+                >
+                  {t.home.categories[c]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Opening hours */}
+          <label className="field">
+            <span className="label">{t.editDish.openingTime}</span>
+            <input
+              value={openingTime}
+              onChange={(e) => setOpeningTime(e.target.value)}
+              placeholder={t.detail.noHours}
+              aria-label={t.editDish.openingTime}
             />
           </label>
 
@@ -371,70 +459,44 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             )}
           </label>
 
-          <div className="field">
-            <span className="label">{t.editDish.dishName}</span>
-            <DishNameAutocomplete
-              value={name}
-              onChange={setName}
-              placeholder={t.addDish.dishNamePlaceholder}
-              required
-              aria-label={t.editDish.dishName}
+          {/* Address — auto-filled from the Google Maps link */}
+          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
+            <span className="label">{t.map.addressLabel}</span>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={
+                isResolvingMap ? t.map.resolvingAddress : t.map.addressPlaceholder
+              }
+              disabled={isResolvingMap}
+              aria-busy={isResolvingMap}
+              aria-label={t.map.addressLabel}
             />
-          </div>
-
-          <div className="field">
-            <span className="label">{t.editDish.category}</span>
-            <div className="chips">
-              {FOOD_CATEGORIES.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  className={`chip ${category === c ? 'active' : ''}`}
-                  onClick={() => setCategory(c)}
-                >
-                  {t.home.categories[c]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="row">
-            <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
-              <span className="label">{t.map.addressLabel}</span>
-              <input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder={
-                  isResolvingMap ? t.map.resolvingAddress : t.map.addressPlaceholder
-                }
-                disabled={isResolvingMap}
-                aria-busy={isResolvingMap}
-                aria-label={t.map.addressLabel}
-              />
-              {isResolvingMap && (
-                <span className="field-hint resolving-hint">
-                  <Loader2 size={13} className="spin" />
-                  {t.map.resolvingAddress}
-                </span>
-              )}
-            </label>
-
-            <label className="field">
-              <span className="label">{t.editDish.openingTime}</span>
-              <input
-                value={openingTime}
-                onChange={(e) => setOpeningTime(e.target.value)}
-                placeholder={t.detail.noHours}
-              />
-            </label>
-          </div>
+            {isResolvingMap && (
+              <span className="field-hint resolving-hint">
+                <Loader2 size={13} className="spin" />
+                {t.map.resolvingAddress}
+              </span>
+            )}
+          </label>
 
           {/* Branches — the extra outlets of the same restaurant */}
           <div className="field">
             <span className="label">{t.branches.branchesSection}</span>
-            <span className="field-hint">{t.branches.branchesHint}</span>
             <BranchEditor branches={branches} onChange={setBranches} />
           </div>
+
+          {/* Notes */}
+          <label className="field">
+            <span className="label">{t.editDish.reviewNote}</span>
+            <textarea
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+              rows={3}
+              placeholder={t.detail.reviewNote}
+              aria-label={t.editDish.reviewNote}
+            />
+          </label>
 
           {/* Tags — multi-select presets + custom hashtag input */}
           <div className="field">
@@ -498,15 +560,27 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             </div>
           </div>
 
-          <label className="field">
-            <span className="label">{t.editDish.reviewNote}</span>
-            <textarea
-              value={reviewNote}
-              onChange={(e) => setReviewNote(e.target.value)}
-              rows={3}
-              placeholder={t.detail.reviewNote}
-            />
-          </label>
+          {/* Rating */}
+          <div className="field">
+            <span className="label">{t.editDish.rating}</span>
+            <div className="stars">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  type="button"
+                  key={n}
+                  className="star"
+                  onClick={() => setRating(n)}
+                  aria-label={t.addDish.starAria(n)}
+                >
+                  <Star
+                    size={22}
+                    fill={n <= rating ? 'var(--star)' : 'none'}
+                    color={n <= rating ? 'var(--star)' : 'var(--text-faint)'}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
 
           {error && <div className="error">{error}</div>}
 
@@ -743,18 +817,6 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           gap: 7px;
           min-width: 0;
         }
-        .row {
-          display: flex;
-          gap: 12px;
-        }
-        .row .field {
-          flex: 1;
-        }
-        @media (max-width: 420px) {
-          .row {
-            flex-direction: column;
-          }
-        }
         .label {
           font-size: 13px;
           font-weight: 600;
@@ -825,6 +887,17 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           background: var(--grad-primary);
           color: var(--primary-contrast);
           border-color: transparent;
+        }
+        .stars {
+          display: flex;
+          gap: 4px;
+        }
+        .star {
+          background: none;
+          border: none;
+          padding: 2px;
+          cursor: pointer;
+          line-height: 0;
         }
         .hashtag-presets {
           display: flex;

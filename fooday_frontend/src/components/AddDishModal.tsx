@@ -35,6 +35,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [address, setAddress] = useState('');
   const [isResolvingMap, setIsResolvingMap] = useState(false);
+  const [openingTime, setOpeningTime] = useState('');
+  const [reviewNote, setReviewNote] = useState('');
   const [rating, setRating] = useState(5);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
@@ -213,6 +215,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       tag: finalTag || null,
       address: address.trim() || null,
       google_map_url: googleMapUrl.trim(),
+      opening_time: openingTime.trim() || null,
+      review_note: reviewNote.trim() || null,
       // Only sent when there is something to store.
       ...(cleanBranches.length > 0 ? { branches: cleanBranches } : {}),
     };
@@ -320,6 +324,17 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             )}
           </div>
 
+          {/* Restaurant */}
+          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
+            <span className="label">{t.addDish.restaurantLabel}</span>
+            <input
+              value={restaurant}
+              onChange={(e) => setRestaurant(e.target.value)}
+              placeholder={t.addDish.restaurantPlaceholder}
+              required
+            />
+          </label>
+
           {/* Name */}
           <div className="field">
             <span className="label">{t.addDish.dishNameLabel}</span>
@@ -349,14 +364,14 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             </div>
           </div>
 
-          {/* Restaurant */}
-          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
-            <span className="label">{t.addDish.restaurantLabel}</span>
+          {/* Opening hours */}
+          <label className="field">
+            <span className="label">{t.addDish.openingTime}</span>
             <input
-              value={restaurant}
-              onChange={(e) => setRestaurant(e.target.value)}
-              placeholder={t.addDish.restaurantPlaceholder}
-              required
+              value={openingTime}
+              onChange={(e) => setOpeningTime(e.target.value)}
+              placeholder={t.detail.noHours}
+              aria-label={t.addDish.openingTime}
             />
           </label>
 
@@ -404,31 +419,20 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           {/* Branches — the extra outlets of the same restaurant */}
           <div className="field">
             <span className="label">{t.branches.branchesSection}</span>
-            <span className="field-hint">{t.branches.branchesHint}</span>
             <BranchEditor branches={branches} onChange={setBranches} />
           </div>
 
-          {/* Rating */}
-          <div className="field">
-            <span className="label">{t.addDish.ratingLabel}</span>
-            <div className="stars">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  type="button"
-                  key={n}
-                  className="star"
-                  onClick={() => setRating(n)}
-                  aria-label={t.addDish.starAria(n)}
-                >
-                  <Star
-                    size={22}
-                    fill={n <= rating ? 'var(--star)' : 'none'}
-                    color={n <= rating ? 'var(--star)' : 'var(--text-faint)'}
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Notes */}
+          <label className="field">
+            <span className="label">{t.addDish.reviewNote}</span>
+            <textarea
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+              rows={3}
+              placeholder={t.detail.reviewNote}
+              aria-label={t.addDish.reviewNote}
+            />
+          </label>
 
           {/* Tags — multi-select presets + custom hashtag input */}
           <div className="field">
@@ -489,6 +493,28 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          {/* Rating */}
+          <div className="field">
+            <span className="label">{t.addDish.ratingLabel}</span>
+            <div className="stars">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  type="button"
+                  key={n}
+                  className="star"
+                  onClick={() => setRating(n)}
+                  aria-label={t.addDish.starAria(n)}
+                >
+                  <Star
+                    size={22}
+                    fill={n <= rating ? 'var(--star)' : 'none'}
+                    color={n <= rating ? 'var(--star)' : 'var(--text-faint)'}
+                  />
+                </button>
+              ))}
             </div>
           </div>
 
@@ -698,7 +724,25 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           outline: none;
           transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
         }
-        .field input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+        .field textarea {
+          width: 100%;
+          padding: 10px 14px;
+          min-height: 84px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text);
+          font-family: inherit;
+          font-size: 14.5px;
+          outline: none;
+          resize: vertical;
+          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .field input:focus,
+        .field textarea:focus {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px var(--ring);
+        }
         .field.resolving input {
           opacity: 0.5;
           pointer-events: none;

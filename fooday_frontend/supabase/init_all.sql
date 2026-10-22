@@ -19,6 +19,7 @@ create table if not exists public.foods (
   opening_time text,
 review_note  text,
   branches     jsonb default '[]'::jsonb,
+  contributors jsonb default '[]'::jsonb,
   created_by   uuid references auth.users (id) on delete set null default auth.uid(),
   created_at   timestamptz not null default now()
 );
@@ -30,6 +31,7 @@ alter table public.foods
   add column if not exists opening_time text,
   add column if not exists review_note  text,
   add column if not exists branches     jsonb default '[]'::jsonb,
+  add column if not exists contributors jsonb default '[]'::jsonb,
   add column if not exists created_by   uuid references auth.users (id) on delete set null default auth.uid();
 
 -- Bật Row Level Security (RLS) cho foods
@@ -51,12 +53,14 @@ create policy "foods_insert_signed_up"
     and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
   );
 
--- User đã đăng nhập được sửa món của mình hoặc món cộng đồng (created_by is null)
+-- Mọi user đã đăng nhập (không phải khách ẩn danh) được sửa món của cộng đồng
 drop policy if exists "foods_update_own" on public.foods;
-create policy "foods_update_own"
-  on public.foods for update to authenticated
-  using (created_by = (select auth.uid()) or created_by is null)
-  with check (created_by = (select auth.uid()) or created_by is null);
+drop policy if exists "foods_update_authenticated" on public.foods;
+create policy "foods_update_authenticated"
+  on public.foods for update
+  to authenticated
+  using (coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false)
+  with check (coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false);
 
 drop policy if exists "foods_delete_own" on public.foods;
 create policy "foods_delete_own"

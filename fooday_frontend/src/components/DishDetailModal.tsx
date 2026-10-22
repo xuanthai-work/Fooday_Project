@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import type { Food } from '@/hooks/useFoods';
+import { parseContributors } from '@/hooks/useFoods';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useAuth } from '@/hooks/useAuth';
 import { useReviews } from '@/hooks/useReviews';
@@ -164,6 +165,19 @@ export default function DishDetailModal({
   // Every outlet of a restaurant shares the same opening hours.
   const displayOpeningTime = currentDish.opening_time || t.detail.noHours;
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'G';
+
+  // --- Contributors (GitHub-style) -------------------------------------------
+  const contributors = useMemo(
+    () => parseContributors(currentDish.contributors),
+    [currentDish.contributors],
+  );
+  // The creator only shows up in the contributor list when they edited the
+  // dish later on — otherwise they stay anonymous ("Fooday community").
+  const creator = useMemo(
+    () => contributors.find((item) => item.id === currentDish.created_by) ?? null,
+    [contributors, currentDish.created_by],
+  );
+  const creatorName = creator?.name || t.detail.community;
 
   const formatCooldownDate = (date: Date) =>
     date.toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', {
@@ -707,6 +721,61 @@ export default function DishDetailModal({
                 </div>
               )}
             </div>
+
+            {/* Contributors — the people who built this dish */}
+            <section className="contributors">
+              <div className="creator-row">
+                <span className="creator-crown" aria-hidden="true">
+                  {creator?.avatar_url ? (
+                    <Image
+                      src={creator.avatar_url}
+                      alt=""
+                      fill
+                      sizes="30px"
+                      className="stack-avatar-img"
+                      style={{ objectFit: 'cover' }}
+                    />
+                  ) : (
+                    '👑'
+                  )}
+                </span>
+                <div className="creator-text">
+                  <span className="creator-label">{t.detail.createdBy}</span>
+                  <span className="creator-name">{creatorName}</span>
+                </div>
+              </div>
+
+              {contributors.length > 0 && (
+                <div className="contributor-row">
+                  <div className="avatar-stack" aria-hidden="true">
+                    {contributors.slice(0, 6).map((contributor) => (
+                      <span key={contributor.id} className="stack-avatar">
+                        {contributor.avatar_url ? (
+                          <Image
+                            src={contributor.avatar_url}
+                            alt=""
+                            fill
+                            sizes="30px"
+                            className="stack-avatar-img"
+                            style={{ objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <span className="stack-initial">
+                            {(contributor.name[0] || '?').toUpperCase()}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="contributor-text">
+                    <span className="contributor-label">{t.detail.contributors}</span>
+                    <span className="contributor-names">
+                      {contributors.map((contributor) => contributor.name).join(', ')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </section>
 
             {/* Reviews & comments */}
             <section className="reviews">
@@ -1384,6 +1453,107 @@ export default function DishDetailModal({
           font-size: 0.875rem;
           color: var(--text);
           line-height: 1.45;
+          word-break: break-word;
+        }
+        /* Contributors — the creator badge and the avatar stack */
+        .contributors {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-top: 14px;
+          padding: 12px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+        }
+        .creator-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .creator-crown {
+          position: relative;
+          display: grid;
+          place-items: center;
+          width: 30px;
+          height: 30px;
+          flex-shrink: 0;
+          border-radius: var(--r-full);
+          background: var(--primary-soft);
+          overflow: hidden;
+          font-size: 14px;
+          line-height: 1;
+        }
+        .creator-text {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          min-width: 0;
+        }
+        .creator-label {
+          font-size: 0.6875rem;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: var(--text-faint);
+        }
+        .creator-name {
+          font-size: 0.875rem;
+          font-weight: 700;
+          color: var(--text);
+          word-break: break-word;
+        }
+        .contributor-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding-top: 10px;
+          border-top: 1px dashed var(--border-strong);
+        }
+        .avatar-stack {
+          display: flex;
+          align-items: center;
+          flex-shrink: 0;
+        }
+        .stack-avatar {
+          position: relative;
+          display: grid;
+          place-items: center;
+          width: 30px;
+          height: 30px;
+          margin-left: -8px;
+          border-radius: var(--r-full);
+          border: 2px solid var(--surface-2);
+          overflow: hidden;
+          background: var(--primary-soft-2);
+          color: var(--primary-strong);
+          font-size: 12px;
+          font-weight: 800;
+          line-height: 1;
+        }
+        .stack-avatar:first-child {
+          margin-left: 0;
+        }
+        .stack-avatar-img {
+          object-fit: cover;
+        }
+        .contributor-text {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          min-width: 0;
+        }
+        .contributor-label {
+          font-size: 0.6875rem;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: var(--text-faint);
+        }
+        .contributor-names {
+          font-size: 0.8125rem;
+          color: var(--text-soft);
+          line-height: 1.4;
           word-break: break-word;
         }
         .info-row-link {

@@ -24,6 +24,14 @@ export interface Branch {
   lng?: number | null; // Kinh độ (bóc tách từ link Google Maps)
 }
 
+/** Someone who helped build a dish (the creator lives in `created_by`). */
+export interface Contributor {
+  id: string;
+  name: string;
+  avatar_url?: string;
+  updated_at?: string;
+}
+
 export interface Food {
   id: number;
   slug: string;
@@ -41,14 +49,47 @@ export interface Food {
   created_by: string | null;
   /** Extra outlets of the restaurant (stored as a jsonb array). */
   branches?: Branch[] | null;
+  /** Everyone who edited the dish besides its creator (stored as a jsonb array). */
+  contributors?: Contributor[] | null;
 }
 
 const COLUMNS =
+  'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches, contributors';
+
+/** Same list without the optional `contributors` column. */
+const COLUMNS_WITHOUT_CONTRIBUTORS =
   'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches';
 
-/** Same list without the optional `branches` column. */
+/** Same list without the optional `branches` / `contributors` columns. */
 const COLUMNS_WITHOUT_BRANCHES =
   'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
+
+/** Normalise the `contributors` jsonb column into a clean array. */
+export function parseContributors(value: unknown): Contributor[] {
+  let raw: unknown = value;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === 'object',
+    )
+    .map((item) => ({
+      id: typeof item.id === 'string' ? item.id : String(item.id ?? ''),
+      name: typeof item.name === 'string' ? item.name : '',
+      avatar_url:
+        typeof item.avatar_url === 'string' ? item.avatar_url : undefined,
+      updated_at:
+        typeof item.updated_at === 'string' ? item.updated_at : undefined,
+    }))
+    .filter((item) => Boolean(item.id));
+}
 
 // Shared store so a newly added dish appears app-wide (Home + Profile) without reload.
 const EMPTY: Food[] = [];
@@ -70,8 +111,22 @@ async function load(): Promise<void> {
   let error = primary.error;
 
   if (error) {
-    // The `branches` column may not be migrated yet — keep the catalog alive
-    // instead of showing an empty feed.
+    // The `contributors` column may not be migrated yet — retry without it.
+    console.warn(
+      '[useFoods] could not read the "contributors" column, retrying without it:',
+      error.message,
+    );
+    const fallback = await supabase
+      .from('foods')
+      .select(COLUMNS_WITHOUT_CONTRIBUTORS)
+      .order('id', { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
+
+  if (error) {
+    // The `branches` column may not be migrated yet either — keep the catalog
+    // alive instead of showing an empty feed.
     console.warn(
       '[useFoods] could not read the "branches" column, retrying without it:',
       error.message,
@@ -85,7 +140,11 @@ async function load(): Promise<void> {
   }
 
   if (!error) {
-    cache = (data ?? []) as unknown as Food[];
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    cache = rows.map((row) => ({
+      ...row,
+      contributors: parseContributors(row.contributors),
+    })) as unknown as Food[];
     loaded = true;
   }
   loadingNow = false;
