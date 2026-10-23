@@ -10,6 +10,11 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-23-form-layout-reorganization-and-maps-address-grouping.md](tasks/2026-10-23-form-layout-reorganization-and-maps-address-grouping.md) | Form Layout Reorganization, Maps/Address Grouping, and Compact Branch Button | 2026-10-23 | ✅ PASS |
+| [2026-10-23-compact-plus-button-for-multi-dish-input.md](tasks/2026-10-23-compact-plus-button-for-multi-dish-input.md) | Compact Plus Button for Multi-Dish Input | 2026-10-23 | ✅ PASS |
+| [2026-10-23-redesign-categories-tiktok-hashtags-and-compact-layout.md](tasks/2026-10-23-redesign-categories-tiktok-hashtags-and-compact-layout.md) | Redesign Categories, TikTok-Style Hashtags, and Streamlined Form Layout | 2026-10-23 | ✅ PASS |
+| [2026-10-23-multi-dish-menu-tags.md](tasks/2026-10-23-multi-dish-menu-tags.md) | Multi-Dish Menu Tags for Diverse Restaurant Offerings | 2026-10-23 | ✅ PASS |
+| [2026-10-23-smart-chain-detection-and-branch-merge.md](tasks/2026-10-23-smart-chain-detection-and-branch-merge.md) | Smart Chain Detection & Multi-Branch Merge Workflow | 2026-10-23 | ✅ PASS |
 | [2026-10-22-google-maps-place-deduplication-and-modal.md](tasks/2026-10-22-google-maps-place-deduplication-and-modal.md) | Google Maps Place Deduplication & Instant View Modal | 2026-10-22 | ✅ PASS |
 | [2026-10-22-align-contributors-stack-flush-right.md](tasks/2026-10-22-align-contributors-stack-flush-right.md) | Align Contributors Avatar Stack Flush Right & Expand Toward Center | 2026-10-22 | ✅ PASS |
 | [2026-10-22-inline-contributors-avatar-stack-and-ordered-modal.md](tasks/2026-10-22-inline-contributors-avatar-stack-and-ordered-modal.md) | Inline Contributors Avatar Stack & Ordered Contributor Modal | 2026-10-22 | ✅ PASS |

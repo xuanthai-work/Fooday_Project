@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Dices, Star, Heart, Sparkles, RotateCw, Eye, Loader2 } from 'lucide-react';
-import { useFoods, FOOD_CATEGORIES, FoodCategory, Food } from '@/hooks/useFoods';
+import { useFoods, FOOD_CATEGORIES, FoodCategory, Food, foodHasCategory } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useEmojiRain } from '@/hooks/useEmojiRain';
@@ -35,6 +35,12 @@ function rarityOf(rating: number): Rarity {
   if (rating >= 4.3) return 'pink';
   if (rating >= 4.0) return 'purple';
   return 'blue';
+}
+
+/** Every category of a dish (falls back to the legacy single category). */
+function foodCategoriesOf(item: Food): FoodCategory[] {
+  const list = item.categories ?? [];
+  return list.length > 0 ? list : [item.category];
 }
 
 type PriceTier = 'all' | 'under30' | '30' | '50' | '199' | '299';
@@ -111,7 +117,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const pool = useMemo(
     () =>
       foods.filter(
-        (f) => f.category === category && inPriceTier(estimatePrice(f), priceTier),
+        (f) =>
+          foodHasCategory(f, category) && inPriceTier(estimatePrice(f), priceTier),
       ),
     [foods, category, priceTier],
   );
@@ -279,7 +286,11 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                     className="rc-img"
                     style={{ objectFit: 'cover' }}
                   />
-                  <span className="rc-cat">{t.home.categories[item.category]}</span>
+                  <span className="rc-cat">
+                    {foodCategoriesOf(item)
+                      .map((c) => t.home.categories[c])
+                      .join(' · ')}
+                  </span>
                   <span className="rc-price">{formatPrice(estimatePrice(item))}</span>
                 </div>
                 <div className="rc-body">

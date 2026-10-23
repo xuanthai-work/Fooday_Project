@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { X, Upload, Star, Loader2 } from 'lucide-react';
+import { X, Upload, Loader2, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -12,16 +12,24 @@ import {
   FoodCategory,
   FOOD_CATEGORIES,
   Contributor,
+  type Branch,
   type Food,
 } from '@/hooks/useFoods';
 import { dishImageService, mapService, DishImage, ParsedMapInfo } from '@/services/api';
 import { useTranslation } from '@/i18n/LanguageContext';
-import { TRENDING_HASHTAGS, normalizeSingleHashtag, serializeHashtags } from '@/lib/hashtags';
+import { TRENDING_HASHTAGS, normalizeSingleHashtag, parseHashtags, serializeHashtags } from '@/lib/hashtags';
 import { isGoogleMapsUrl, extractPlaceId, mapsLinksMatch } from '@/lib/maps';
+import { extractCoordsFromUrl, parseBranches } from '@/lib/geo';
+import {
+  findBrandMatch,
+  isBranchAlreadyExists,
+  suggestBranchName,
+  type BrandMatch,
+  type BranchDraftInfo,
+} from '@/lib/brandMatch';
 import DishNameAutocomplete from './DishNameAutocomplete';
 import BranchEditor, { type BranchDraft } from './BranchEditor';
-
-export { TRENDING_HASHTAGS };
+import { buildContributors } from './EditDishModal';
 
 const slugify = (s: string) =>
   s
@@ -59,24 +67,32 @@ interface AddDishModalProps {
   onClose: () => void;
 }
 
+/** A chain/brand found in the catalog with the draft of the new outlet. */
+interface DetectedChain {
+  match: BrandMatch;
+  branchName: string;
+  draft: BranchDraftInfo;
+}
+
 export default function AddDishModal({ onClose }: AddDishModalProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { foods } = useFoods();
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<FoodCategory>('Foods');
+  const [dishList, setDishList] = useState<string[]>([]);
+  const [dishInput, setDishInput] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<FoodCategory[]>(['Foods']);
   const [restaurant, setRestaurant] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [address, setAddress] = useState('');
   const [isResolvingMap, setIsResolvingMap] = useState(false);
   const [duplicateDish, setDuplicateDish] = useState<Food | null>(null);
   const [showDuplicatePopup, setShowDuplicatePopup] = useState(false);
+  const [detectedChain, setDetectedChain] = useState<DetectedChain | null>(null);
+  const [showChainModal, setShowChainModal] = useState(false);
+  const [savingBranch, setSavingBranch] = useState(false);
   const [openingTime, setOpeningTime] = useState('');
   const [reviewNote, setReviewNote] = useState('');
-  const [rating, setRating] = useState(5);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
   const [imageList, setImageList] = useState<string[]>([]);
   const [branches, setBranches] = useState<BranchDraft[]>([]);
   const [candidates, setCandidates] = useState<DishImage[]>([]);
@@ -85,10 +101,36 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // The first dish stands in for the legacy single-name field — it feeds the
+  // image suggestions, the slug and every current view.
+  const name = dishList[0] ?? '';
+
+  // Enter, a comma or the "+" button turns the typed text into dish chips.
+  const handleAddDish = (raw: string) => {
+    const parts = raw
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    setDishInput('');
+    if (parts.length === 0) return;
+    setDishList((prev) => {
+      const next = [...prev];
+      for (const part of parts) if (!next.includes(part)) next.push(part);
+      return next;
+    });
+  };
+
+  const handleRemoveDish = (dish: string) =>
+    setDishList((prev) => prev.filter((item) => item !== dish));
+
   // Esc to close (closes the duplicate warning first when it is open)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      if (showChainModal) {
+        setShowChainModal(false);
+        return;
+      }
       if (showDuplicatePopup) {
         setShowDuplicatePopup(false);
         return;
@@ -97,7 +139,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, showDuplicatePopup]);
+  }, [onClose, showDuplicatePopup, showChainModal]);
 
   // Unsplash suggestions by dish name (debounced). Auto-seed the gallery with the
   // first result until the user adds photos of their own.
@@ -134,6 +176,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     setGoogleMapUrl(value);
     setDuplicateDish(null);
     setShowDuplicatePopup(false);
+    setDetectedChain(null);
+    setShowChainModal(false);
     resolveSeqRef.current += 1;
     if (resolveTimerRef.current) {
       clearTimeout(resolveTimerRef.current);
@@ -164,6 +208,38 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       }
 
       if (info.address) setAddress(info.address);
+
+      // B2: the place is new, but its name may belong to a restaurant that is
+      // already on Fooday — offer merging it as a new branch of that chain.
+      const rawName = info.restaurant_name || '';
+      if (rawName.trim()) {
+        const placeId =
+          info.place_id?.toLowerCase() ||
+          extractPlaceId(info.resolved_url) ||
+          extractPlaceId(url);
+        const link = info.resolved_url || url;
+        const match = findBrandMatch(rawName, foodsRef.current);
+        if (
+          match &&
+          !isBranchAlreadyExists(placeId, link, info.address, match.representativeFood)
+        ) {
+          const coords = extractCoordsFromUrl(link);
+          setDetectedChain({
+            match,
+            branchName: suggestBranchName(rawName, match.representativeFood),
+            draft: {
+              name: rawName,
+              address: info.address ?? '',
+              google_map_url: link,
+              lat: coords?.lat ?? null,
+              lng: coords?.lng ?? null,
+            },
+          });
+          setShowChainModal(true);
+          return;
+        }
+      }
+
       if (info.restaurant_name) {
         setRestaurant((prev) => (prev.trim() ? prev : (info.restaurant_name as string)));
       }
@@ -181,6 +257,83 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     if (window.location.pathname !== '/') {
       router.push(`/?dish=${target.id}`);
     }
+  };
+
+  // Chain dialog, action 1 (recommended): save the new outlet on the matched
+  // restaurant, then jump straight to it so the user sees the added branch.
+  const handleMergeBranch = async () => {
+    const chain = detectedChain;
+    if (!chain || savingBranch) return;
+    setSavingBranch(true);
+    setError(null);
+    try {
+      const { match, draft, branchName } = chain;
+      const target = match.representativeFood;
+      const newBranch: Branch = {
+        name: branchName,
+        address: draft.address,
+        google_map_url: draft.google_map_url,
+        lat: draft.lat,
+        lng: draft.lng,
+      };
+      // Each dish of the brand keeps its own branch list — only append the
+      // new outlet so no local data is lost.
+      for (const dish of match.dishes) {
+        const nextBranches = [...parseBranches(dish.branches), newBranch];
+        const contributorList = buildContributors(dish, user);
+        let { error: updErr } = await supabase
+          .from('foods')
+          .update({ branches: nextBranches, contributors: contributorList })
+          .eq('id', dish.id);
+        if (updErr && /contributors/i.test(updErr.message)) {
+          // The `contributors` column is not migrated yet — save without it.
+          ({ error: updErr } = await supabase
+            .from('foods')
+            .update({ branches: nextBranches })
+            .eq('id', dish.id));
+        }
+        if (updErr) throw updErr;
+      }
+      await refreshFoods();
+      setShowChainModal(false);
+      setDetectedChain(null);
+      onClose();
+      window.dispatchEvent(
+        new CustomEvent<Food>('fooday:open-dish', {
+          detail: {
+            ...target,
+            branches: [...parseBranches(target.branches), newBranch],
+            contributors: buildContributors(target, user),
+          },
+        }),
+      );
+      if (window.location.pathname !== '/') {
+        router.push(`/?dish=${target.id}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.addDish.branchSaveFailed);
+    } finally {
+      setSavingBranch(false);
+    }
+  };
+
+  // Chain dialog, action 2: keep adding a dish, standardised on the matched
+  // brand. The pasted place becomes the main location of the dish being
+  // added, i.e. it joins the branch list of this very dish.
+  const handleContinueForBranch = () => {
+    const chain = detectedChain;
+    if (!chain) return;
+    setRestaurant(chain.match.targetRestaurant);
+    setGoogleMapUrl(chain.draft.google_map_url.trim());
+    if (!address.trim() && chain.draft.address) setAddress(chain.draft.address);
+    setShowChainModal(false);
+    setDetectedChain(null);
+  };
+
+  // Chain dialog, action 3: treat the pasted place as a brand-new restaurant.
+  const handleSeparateRestaurant = () => {
+    setShowChainModal(false);
+    setDetectedChain(null);
   };
 
   // Drop a pending resolution when the modal unmounts.
@@ -230,7 +383,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
   const canSubmit =
     Boolean(
-      name.trim() &&
+      dishList.length > 0 &&
         restaurant.trim() &&
         imageList.length > 0 &&
         isGoogleMapsUrl(googleMapUrl),
@@ -238,24 +391,90 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     !busy &&
     !duplicateDish;
 
-  const handleAddTag = (raw: string) => {
-    const normalized = normalizeSingleHashtag(raw);
-    setTagInput('');
-    if (!normalized) return;
-    setSelectedTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+  const toggleCategory = (c: FoodCategory) => {
+    // Multi-select: tap to add, tap again to remove — but never empty the list.
+    setSelectedCategories((prev) => {
+      if (prev.includes(c)) {
+        return prev.length > 1 ? prev.filter((item) => item !== c) : prev;
+      }
+      return [...prev, c];
+    });
   };
 
-  const handleTogglePreset = (preset: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(preset) ? prev.filter((item) => item !== preset) : [...prev, preset],
-    );
+  /* ===== TikTok-style hashtag input ===== */
+
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  // The whole hashtag string as the user sees it, e.g. `#viahe #giahocsinh`.
+  const [tagText, setTagText] = useState('');
+  // The token the caret currently sits in (drives the suggestion dropdown).
+  const [tagWord, setTagWord] = useState('');
+  const [tagSuggestOpen, setTagSuggestOpen] = useState(false);
+
+  const tagQuery = normalizeSingleHashtag(tagWord).replace(/^#/, '');
+  const tagSuggestions = useMemo(
+    () =>
+      TRENDING_HASHTAGS.filter(
+        (preset) => !parseHashtags(tagText).includes(preset) && (!tagQuery || preset.slice(1).includes(tagQuery)),
+      ).slice(0, 6),
+    [tagText, tagQuery],
+  );
+
+  /** Extracts the token at the caret and keeps the dropdown in sync. */
+  const refreshTagWord = (el: HTMLInputElement) => {
+    const caret = el.selectionStart ?? el.value.length;
+    const word = el.value.slice(0, caret).match(/[^\s,]*$/)?.[0] ?? '';
+    setTagWord(word);
+    setTagSuggestOpen(word.trim().length > 0);
+  };
+
+  const handleTagChange = (next: string) => {
+    if (/[\s,]$/.test(next)) {
+      // A token was completed (space or comma): normalize it and auto-# it.
+      const tokens = parseHashtags(next);
+      setTagText(tokens.length > 0 ? `${tokens.join(' ')} ` : '');
+      setTagWord('');
+      setTagSuggestOpen(false);
+    } else {
+      setTagText(next);
+      if (tagInputRef.current) refreshTagWord(tagInputRef.current);
+    }
+  };
+
+  const handleTagSuggestClosed = () => {
+    setTagSuggestOpen(false);
+    setTagWord('');
+  };
+
+  const handleTagBlur = () => {
+    handleTagSuggestClosed();
+    setTagText((prev) => parseHashtags(prev).join(' '));
   };
 
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+    if (e.key === 'Enter') {
+      // Never let Enter submit the form while typing hashtags.
       e.preventDefault();
-      handleAddTag(tagInput);
+      setTagText((prev) => parseHashtags(prev).join(' '));
+      handleTagSuggestClosed();
+    } else if (e.key === 'Escape') {
+      handleTagSuggestClosed();
     }
+  };
+
+  /** Clicking a suggestion fills it in and appends a space to keep typing. */
+  const pickTagSuggestion = (preset: string) => {
+    const el = tagInputRef.current;
+    const caret = el?.selectionStart ?? tagText.length;
+    const before = tagText.slice(0, caret).replace(/[^\s,]*$/, '');
+    const after = tagText.slice(caret).replace(/^[^\s,]*/, '');
+    const inserted = `${before}${preset} `;
+    setTagText(`${inserted}${after}`);
+    handleTagSuggestClosed();
+    window.requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(inserted.length, inserted.length);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -264,9 +483,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     setBusy(true);
     setError(null);
     const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 8)}`;
-    const finalTag = serializeHashtags(
-      tagInput.trim() ? [...selectedTags, tagInput] : selectedTags,
-    );
+    const finalTag = serializeHashtags(parseHashtags(tagText));
     // Keep only the branches that carry real information.
     const cleanBranches = branches
       .map((branch) => ({
@@ -290,12 +507,16 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           },
         ]
       : [];
+    // `name` keeps the first dish so every legacy view stays alive; the full
+    // menu goes to `dishes` (with a joined-string fallback when the column is
+    // not migrated yet). The `categories` array is the multi-category update
+    // of `category`, which keeps carrying the first selection for compat.
     const basePayload = {
       slug,
-      name: name.trim(),
-      category,
+      name: dishList[0] ?? '',
+      category: selectedCategories[0],
       restaurant: restaurant.trim(),
-      rating,
+      rating: 5,
       image_url: imageList[0] || '',
       images: imageList,
       tag: finalTag || null,
@@ -306,11 +527,37 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       // Only sent when there is something to store.
       ...(cleanBranches.length > 0 ? { branches: cleanBranches } : {}),
     };
-    const payload = { ...basePayload, contributors: initialContributors };
-    let { error: insErr } = await supabase.from('foods').insert(payload);
+    // The `categories` column is newer than `category`; likewise `dishes` and
+    // `contributors` may be unmigrated. The row starts complete and each
+    // failing column is simply stripped before retrying.
+    let row: Record<string, unknown> = {
+      ...basePayload,
+      categories: selectedCategories,
+      dishes: dishList,
+      contributors: initialContributors,
+    };
+    /** The row minus one column (for databases without that migration). */
+    const stripRowField = (field: string): Record<string, unknown> => {
+      const rest: Record<string, unknown> = { ...row };
+      delete rest[field];
+      return rest;
+    };
+
+    let { error: insErr } = await supabase.from('foods').insert(row);
+    if (insErr && /categories/i.test(insErr.message)) {
+      row = stripRowField('categories');
+      ({ error: insErr } = await supabase.from('foods').insert(row));
+    }
+    if (insErr && /dishes/i.test(insErr.message)) {
+      // The `dishes` column is not migrated yet — the joined string in `name`
+      // keeps the whole menu readable.
+      row = { ...stripRowField('dishes'), name: dishList.join(', ') };
+      ({ error: insErr } = await supabase.from('foods').insert(row));
+    }
     if (insErr && /contributors/i.test(insErr.message)) {
       // The `contributors` column is not migrated yet — save without it.
-      const retry = await supabase.from('foods').insert(basePayload);
+      row = stripRowField('contributors');
+      const retry = await supabase.from('foods').insert(row);
       insErr = retry.error;
     }
     if (insErr) {
@@ -416,6 +663,72 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             )}
           </div>
 
+          {/* Dishes — tag-list input: Enter / comma / "+" adds a chip */}
+          <div className="field">
+            <span className="label">
+              {t.addDish.dishesLabel} <span className="required-mark">*</span>
+            </span>
+
+            {dishList.length > 0 && (
+              <div className="selected-tags">
+                {dishList.map((dish) => (
+                  <span key={dish} className="selected-tag-chip">
+                    {dish}
+                    <button
+                      type="button"
+                      className="remove-tag-btn"
+                      onClick={() => handleRemoveDish(dish)}
+                      aria-label={`Remove ${dish}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="tag-input-row">
+              <DishNameAutocomplete
+                value={dishInput}
+                onChange={setDishInput}
+                onCommit={handleAddDish}
+                placeholder={t.addDish.dishInputPlaceholder}
+                aria-label={t.addDish.dishesLabel}
+              />
+              <button
+                type="button"
+                className="tag-add-btn"
+                onClick={() => handleAddDish(dishInput)}
+                aria-label={t.addDish.addDishBtn}
+                title={t.addDish.addDishBtn}
+              >
+                <Plus size={19} strokeWidth={2.4} />
+              </button>
+            </div>
+
+            {dishList.length === 0 && (
+              <span className="field-hint">{t.addDish.minOneDishRequired}</span>
+            )}
+          </div>
+
+          {/* Category — multi-select: a place can sell mains, drinks AND snacks */}
+          <div className="field">
+            <span className="label">{t.addDish.categoryLabel}</span>
+            <div className="chips">
+              {FOOD_CATEGORIES.map((c) => (
+                <button
+                  type="button"
+                  key={c}
+                  className={`chip ${selectedCategories.includes(c) ? 'active' : ''}`}
+                  onClick={() => toggleCategory(c)}
+                  aria-pressed={selectedCategories.includes(c)}
+                >
+                  {t.home.categories[c]}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Restaurant */}
           <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
             <span className="label">{t.addDish.restaurantLabel}</span>
@@ -427,51 +740,16 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             />
           </label>
 
-          {/* Name */}
-          <div className="field">
-            <span className="label">{t.addDish.dishNameLabel}</span>
-            <DishNameAutocomplete
-              value={name}
-              onChange={setName}
-              placeholder={t.addDish.dishNamePlaceholder}
-              required
-              aria-label={t.addDish.dishNameLabel}
-            />
-          </div>
-
-          {/* Category */}
-          <div className="field">
-            <span className="label">{t.addDish.categoryLabel}</span>
-            <div className="chips">
-              {FOOD_CATEGORIES.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  className={`chip ${category === c ? 'active' : ''}`}
-                  onClick={() => setCategory(c)}
-                >
-                  {t.home.categories[c]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Opening hours */}
-          <label className="field">
-            <span className="label">{t.addDish.openingTime}</span>
-            <input
-              value={openingTime}
-              onChange={(e) => setOpeningTime(e.target.value)}
-              placeholder={t.detail.noHours}
-              aria-label={t.addDish.openingTime}
-            />
-          </label>
-
-          {/* Google Maps link — required, auto-resolves the address */}
-          <label className="field">
+          {/* Google Maps link + address — one grouped field; the maps link is
+              required and auto-fills the address. The compact branch button
+              lives right under the address. */}
+          <div className="field maps-address-group">
             <span className="label">
               {t.map.googleMapLabel} <span className="required-mark">*</span>
+              <span className="label-divider" aria-hidden="true">|</span>
+              {t.map.addressLabel}
             </span>
+
             <input
               value={googleMapUrl}
               onChange={(e) => handleGoogleMapUrlChange(e.target.value)}
@@ -485,11 +763,9 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             {googleMapUrl.trim() && !isGoogleMapsUrl(googleMapUrl) && (
               <span className="field-hint error-hint">{t.map.googleMapRequired}</span>
             )}
-          </label>
 
-          {/* Address — optional, auto-filled from the Google Maps link */}
-          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
-            <span className="label">{t.map.addressLabel}</span>
+            <span className="field-divider" aria-hidden="true">|</span>
+
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
@@ -498,6 +774,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
               }
               disabled={isResolvingMap}
               aria-busy={isResolvingMap}
+              className={isResolvingMap ? 'is-resolving' : ''}
               aria-label={t.map.addressLabel}
             />
             {isResolvingMap && (
@@ -506,108 +783,32 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                 {t.map.resolvingAddress}
               </span>
             )}
-          </label>
 
-          {/* Branches — the extra outlets of the same restaurant */}
-          <div className="field">
-            <span className="label">{t.branches.branchesSection}</span>
             <BranchEditor branches={branches} onChange={setBranches} />
           </div>
 
-          {/* Notes */}
-          <label className="field">
-            <span className="label">{t.addDish.reviewNote}</span>
-            <textarea
-              value={reviewNote}
-              onChange={(e) => setReviewNote(e.target.value)}
-              rows={3}
-              placeholder={t.detail.reviewNote}
-              aria-label={t.addDish.reviewNote}
-            />
-          </label>
-
-          {/* Tags — multi-select presets + custom hashtag input */}
-          <div className="field">
-            <span className="label">{t.addDish.tagLabel}</span>
-
-            {selectedTags.length > 0 && (
-              <div className="selected-tags">
-                {selectedTags.map((selected) => (
-                  <span key={selected} className="selected-tag-chip">
-                    {selected}
-                    <button
-                      type="button"
-                      className="remove-tag-btn"
-                      onClick={() =>
-                        setSelectedTags((prev) => prev.filter((item) => item !== selected))
-                      }
-                      aria-label={`Remove ${selected}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="tag-input-row">
+          {/* Opening hours & note — one two-column row */}
+          <div className="two-cols-row">
+            <label className="field">
+              <span className="label">{t.addDish.openingTime}</span>
               <input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                placeholder={t.addDish.tagPlaceholder}
-                aria-label={t.addDish.tagLabel}
+                value={openingTime}
+                onChange={(e) => setOpeningTime(e.target.value)}
+                placeholder={t.detail.noHours}
+                aria-label={t.addDish.openingTime}
               />
-              <button
-                type="button"
-                className="tag-add-btn"
-                onClick={() => handleAddTag(tagInput)}
-              >
-                {t.addDish.addTag}
-              </button>
-            </div>
-
-            <div className="hashtag-presets">
-              <span className="hashtag-presets-label">{t.addDish.trendingHashtagsLabel}</span>
-              <div className="hashtag-chips">
-                {TRENDING_HASHTAGS.map((preset) => {
-                  const isSelected = selectedTags.includes(preset);
-                  return (
-                    <button
-                      type="button"
-                      key={preset}
-                      className={`hashtag-chip ${isSelected ? 'active' : ''}`}
-                      onClick={() => handleTogglePreset(preset)}
-                      aria-pressed={isSelected}
-                    >
-                      {preset}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Rating */}
-          <div className="field">
-            <span className="label">{t.addDish.ratingLabel}</span>
-            <div className="stars">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  type="button"
-                  key={n}
-                  className="star"
-                  onClick={() => setRating(n)}
-                  aria-label={t.addDish.starAria(n)}
-                >
-                  <Star
-                    size={22}
-                    fill={n <= rating ? 'var(--star)' : 'none'}
-                    color={n <= rating ? 'var(--star)' : 'var(--text-faint)'}
-                  />
-                </button>
-              ))}
-            </div>
+            </label>
+            <label className="field">
+              <span className="label">{t.addDish.reviewNote}</span>
+              <textarea
+                className="note-textarea"
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                rows={1}
+                placeholder={t.addDish.reviewNotePlaceholder}
+                aria-label={t.addDish.reviewNote}
+              />
+            </label>
           </div>
 
           {duplicateDish && !showDuplicatePopup && (
@@ -629,6 +830,66 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           )}
 
           {error && <div className="error">{error}</div>}
+
+          {/* Tags — TikTok-style hashtags: type separated by spaces with a
+              vertical suggestion dropdown under the input. Always the last
+              field of the form, right above the action buttons. */}
+          <div className="field">
+            <span className="label">{t.addDish.tagLabel}</span>
+
+            <div className="tag-input-row hashtag-wrap">
+              <input
+                ref={tagInputRef}
+                value={tagText}
+                onChange={(e) => handleTagChange(e.target.value)}
+                onKeyDown={handleTagKeyDown}
+                onKeyUp={(e) => refreshTagWord(e.currentTarget)}
+                onClick={(e) => refreshTagWord(e.currentTarget)}
+                onFocus={(e) => refreshTagWord(e.currentTarget)}
+                onBlur={handleTagBlur}
+                placeholder={t.addDish.tagPlaceholder}
+                aria-label={t.addDish.tagLabel}
+                autoComplete="off"
+                spellCheck={false}
+              />
+
+              {tagSuggestOpen && tagSuggestions.length > 0 && (
+                <div className="tag-suggest-list" role="listbox" aria-label={t.addDish.tagLabel}>
+                  <span className="tag-suggest-head">{t.addDish.trendingHashtagsLabel}</span>
+                  {tagSuggestions.map((preset) => {
+                    const tag = preset.slice(1);
+                    const start = tag.indexOf(tagQuery);
+                    return (
+                      <button
+                        type="button"
+                        key={preset}
+                        role="option"
+                        aria-selected={false}
+                        className="tag-suggest-item"
+                        // Keep the input focused — a blur would close the dropdown.
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pickTagSuggestion(preset)}
+                      >
+                        <span className="tag-suggest-hash" aria-hidden="true">
+                          #
+                        </span>
+                        <span className="tag-suggest-name">
+                          {start === -1 ? (
+                            tag
+                          ) : (
+                            <>
+                              <strong>{tag.slice(start, start + tagQuery.length)}</strong>
+                              {tag.slice(start + tagQuery.length)}
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="actions">
             <button type="button" className="cancel" onClick={onClose}>
@@ -675,6 +936,72 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
               </button>
               <button type="button" className="duplicate-primary" onClick={handleViewExisting}>
                 {t.addDish.viewExistingDishBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detectedChain && showChainModal && (
+        <div
+          className="duplicate-overlay"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSeparateRestaurant();
+          }}
+        >
+          <div
+            className="duplicate-modal chain-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="chain-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="duplicate-icon" aria-hidden="true">
+              🏢
+            </div>
+            <span className="chain-badge">{t.addDish.chainSuggestBadge}</span>
+            <h3 id="chain-title" className="duplicate-title">
+              {t.addDish.chainDetectedTitle(detectedChain.match.targetRestaurant)}
+            </h3>
+            <p className="duplicate-desc">{t.addDish.chainDetectedDesc}</p>
+            <div
+              className="chain-branch-card"
+              role="group"
+              aria-label={t.addDish.branchNamePlaceholder}
+            >
+              <span className="chain-branch-name">
+                <span aria-hidden="true">📍</span>
+                {detectedChain.branchName}
+              </span>
+              {detectedChain.draft.address ? (
+                <span className="chain-branch-address">{detectedChain.draft.address}</span>
+              ) : null}
+            </div>
+            <div className="chain-actions">
+              <button
+                type="button"
+                className="chain-primary"
+                onClick={handleMergeBranch}
+                disabled={savingBranch}
+              >
+                {savingBranch ? <Loader2 size={18} className="spin" /> : t.addDish.mergeBranchBtn}
+              </button>
+              <button
+                type="button"
+                className="chain-secondary"
+                onClick={handleContinueForBranch}
+                disabled={savingBranch}
+              >
+                {t.addDish.addDishForBranchBtn}
+              </button>
+              <button
+                type="button"
+                className="chain-ghost"
+                onClick={handleSeparateRestaurant}
+                disabled={savingBranch}
+              >
+                {t.addDish.separateRestaurantBtn}
               </button>
             </div>
           </div>
@@ -927,53 +1254,119 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           color: var(--primary-contrast);
           border-color: transparent;
         }
-        .stars { display: flex; gap: 4px; }
-        .star { background: none; border: none; padding: 2px; cursor: pointer; line-height: 0; }
-        .hashtag-presets {
+        /* Google Maps link + address — one grouped field with a thin divider */
+        .label-divider {
+          margin: 0 5px;
+          color: var(--text-faint);
+          font-weight: 700;
+        }
+        .maps-address-group input.is-resolving {
+          opacity: 0.5;
+          cursor: progress;
+        }
+        .field-divider {
+          text-align: center;
+          color: var(--text-faint);
+          font-weight: 700;
+          font-size: 14px;
+          line-height: 1;
+          margin: 2px 0;
+        }
+        /* Opening hours & note — one two-column row */
+        .two-cols-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+        @media (max-width: 480px) {
+          .two-cols-row {
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+          }
+        }
+        /* TikTok-style hashtag suggestion dropdown */
+        .hashtag-wrap {
+          position: relative;
+          align-items: stretch;
+        }
+        .tag-suggest-list {
+          position: absolute;
+          top: calc(100% + 4px);
+          left: 0;
+          right: 0;
+          z-index: 30;
           display: flex;
           flex-direction: column;
-          gap: 6px;
-          margin-top: 3px;
-        }
-        .hashtag-presets-label {
-          font-size: 11.5px;
-          font-weight: 600;
-          color: var(--text-faint);
-          letter-spacing: 0.01em;
-        }
-        .hashtag-chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-        }
-        .hashtag-chip {
-          height: 24px;
-          padding: 3px 8px;
-          display: inline-flex;
-          align-items: center;
-          border-radius: var(--r-full);
+          gap: 2px;
+          max-height: 216px;
+          overflow-y: auto;
+          padding: 6px;
+          border-radius: var(--r-md);
           border: 1px solid var(--border);
-          background: var(--surface-2);
-          color: var(--text-soft);
-          font-size: 12px;
+          background: var(--surface);
+          box-shadow: var(--shadow-lg);
+        }
+        .tag-suggest-head {
+          padding: 2px 10px 4px;
+          font-size: 11px;
           font-weight: 600;
-          line-height: 1;
+          letter-spacing: 0.01em;
+          color: var(--text-faint);
+        }
+        .tag-suggest-item {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 8px 10px;
+          border: none;
+          border-radius: var(--r-sm);
+          background: transparent;
+          color: var(--text);
+          font-family: inherit;
+          font-size: 13.5px;
+          font-weight: 600;
+          line-height: 1.2;
+          text-align: left;
           white-space: nowrap;
           cursor: pointer;
-          transition: background var(--dur-fast) var(--ease),
-            color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
-            transform var(--dur-fast) var(--ease);
+          transition: background var(--dur-fast) var(--ease);
         }
-        .hashtag-chip:hover {
-          transform: translateY(-1px);
-          border-color: var(--primary);
+        .tag-suggest-item:hover {
+          background: var(--primary-soft);
+        }
+        .tag-suggest-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tag-suggest-item strong {
           color: var(--primary-strong);
+          font-weight: 800;
         }
-        .hashtag-chip.active {
-          background: var(--grad-primary);
+        .tag-suggest-hash {
+          color: var(--primary-strong);
+          font-weight: 800;
+        }
+        /* Compact one-line note field, last field of the form */
+        .field textarea.note-textarea {
+          width: 100%;
+          height: 44px;
+          min-height: 44px;
+          padding: 10px 14px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text);
+          font-family: inherit;
+          font-size: 14.5px;
+          line-height: 1.3;
+          outline: none;
+          resize: none;
+          overflow-y: auto;
+          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .field textarea.note-textarea:focus {
           border-color: var(--primary);
-          color: var(--primary-contrast);
-          box-shadow: var(--shadow-primary);
+          box-shadow: 0 0 0 3px var(--ring);
         }
         .selected-tags {
           display: flex;
@@ -1015,20 +1408,28 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           flex: 1;
           min-width: 0;
         }
+        .tag-input-row :global(.root) {
+          flex: 1;
+          min-width: 0;
+        }
         .tag-add-btn {
           flex-shrink: 0;
+          width: 44px;
           height: 44px;
-          padding: 0 14px;
+          padding: 0;
+          display: grid;
+          place-items: center;
           border-radius: var(--r-md);
           border: 1px solid var(--primary-soft-2);
           background: var(--primary-soft);
           color: var(--primary-strong);
-          font-family: inherit;
-          font-size: 13.5px;
-          font-weight: 700;
           cursor: pointer;
           transition: background var(--dur-fast) var(--ease),
-            border-color var(--dur-fast) var(--ease);
+            border-color var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease);
+        }
+        .tag-add-btn:active {
+          transform: scale(0.96);
         }
         .tag-add-btn:hover {
           background: var(--primary-soft-2);
@@ -1156,6 +1557,105 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           box-shadow: var(--shadow-primary);
         }
         .duplicate-primary:active { transform: scale(0.98); }
+        .chain-modal { text-align: center; }
+        .chain-modal .duplicate-icon { margin-bottom: 10px; }
+        .chain-badge {
+          display: inline-block;
+          margin-bottom: 12px;
+          padding: 4px 11px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--primary-soft);
+          color: var(--primary-strong);
+          font-size: 11.5px;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+        }
+        .chain-branch-card {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          padding: 12px 14px;
+          margin-bottom: 16px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          text-align: left;
+        }
+        .chain-branch-name {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          font-size: 13.5px;
+          font-weight: 700;
+          color: var(--text);
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .chain-branch-address {
+          font-size: 12.5px;
+          font-weight: 500;
+          line-height: 1.45;
+          color: var(--text-soft);
+          word-break: break-word;
+        }
+        .chain-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+        }
+        .chain-primary,
+        .chain-secondary {
+          flex: none;
+          width: 100%;
+          height: 44px;
+          border-radius: var(--r-md);
+          font-family: inherit;
+          font-size: 13.5px;
+          font-weight: 700;
+          cursor: pointer;
+          display: grid;
+          place-items: center;
+          transition: transform var(--dur-fast) var(--ease),
+            background var(--dur-fast) var(--ease),
+            opacity var(--dur-fast) var(--ease);
+        }
+        .chain-primary {
+          border: none;
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          box-shadow: var(--shadow-primary);
+        }
+        .chain-primary:active { transform: scale(0.98); }
+        .chain-secondary {
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text-soft);
+        }
+        .chain-secondary:hover { background: var(--surface-3); }
+        .chain-primary:disabled,
+        .chain-secondary:disabled,
+        .chain-ghost:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .chain-ghost {
+          height: 40px;
+          padding: 8px 0;
+          border: none;
+          background: transparent;
+          color: var(--text-soft);
+          font-family: inherit;
+          font-size: 12.5px;
+          font-weight: 600;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+          cursor: pointer;
+          transition: color var(--dur-fast) var(--ease);
+        }
+        .chain-ghost:hover { color: var(--heart); }
         .actions { display: flex; gap: 10px; margin-top: 4px; }
         .cancel {
           flex: 1;

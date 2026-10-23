@@ -67,6 +67,8 @@ interface DishNameAutocompleteProps {
   placeholder?: string;
   required?: boolean;
   'aria-label'?: string;
+  /** Multi-dish mode: Enter / comma / click commit the name via this callback. */
+  onCommit?: (value: string) => void;
 }
 
 /**
@@ -80,6 +82,7 @@ export default function DishNameAutocomplete({
   placeholder,
   required,
   'aria-label': ariaLabel,
+  onCommit,
 }: DishNameAutocompleteProps) {
   const { t } = useTranslation();
   const { foods } = useFoods();
@@ -88,12 +91,17 @@ export default function DishNameAutocomplete({
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
 
-  // Curated list merged with every dish already stored in the database.
+  // Curated list merged with every dish already stored in the database —
+  // both the main `name` of a row and every item of its `dishes` menu.
   const catalog = useMemo(() => {
     const names = new Set<string>(POPULAR_DISH_NAMES);
     for (const food of foods) {
       const name = food.name?.trim();
       if (name) names.add(name);
+      for (const dish of food.dishes ?? []) {
+        const trimmed = dish?.trim();
+        if (trimmed) names.add(trimmed);
+      }
     }
     return Array.from(names);
   }, [foods]);
@@ -143,18 +151,59 @@ export default function DishNameAutocomplete({
   }, [activeIndex, listId]);
 
   const select = (name: string) => {
-    onChange(toTitleCase(name));
+    const titled = toTitleCase(name);
+    if (onCommit) {
+      // Multi-dish mode: picking a suggestion adds it straight to the list.
+      setActiveIndex(-1);
+      setOpen(false);
+      onCommit(titled);
+      return;
+    }
+    onChange(titled);
     setActiveIndex(-1);
     setOpen(false);
   };
 
   const applyCustomName = () => {
+    if (onCommit) {
+      setActiveIndex(-1);
+      setOpen(false);
+      onCommit(toTitleCase(query));
+      return;
+    }
     onChange(toTitleCase(query));
     setActiveIndex(-1);
     setOpen(false);
   };
 
+  /** Commit the typed text (multi-dish mode), keeping the legacy fill mode. */
+  const commit = (raw: string) => {
+    if (!onCommit) {
+      onChange(toTitleCase(raw));
+      return;
+    }
+    const text = toTitleCase(raw.trim());
+    if (!text) return;
+    setActiveIndex(-1);
+    setOpen(false);
+    onCommit(text);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Multi-dish mode: Enter commits the highlighted suggestion or the typed
+    // text; a comma commits whatever is in front of it.
+    if (onCommit && (e.key === 'Enter' || e.key === ',')) {
+      if (e.key === 'Enter' && showDropdown && activeIndex >= 0 && suggestions[activeIndex]) {
+        e.preventDefault();
+        commit(suggestions[activeIndex]);
+        return;
+      }
+      if (!query) return;
+      e.preventDefault();
+      commit(query);
+      return;
+    }
+
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (!query) return;
       e.preventDefault();

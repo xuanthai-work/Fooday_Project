@@ -250,7 +250,7 @@ export default function BranchEditor({ branches, onChange }: BranchEditorProps) 
       )}
 
       <button type="button" className="add-branch" onClick={addBranch}>
-        <Plus size={15} />
+        <Plus size={14} />
         <span>{t.branches.addBranch}</span>
       </button>
 
@@ -412,18 +412,20 @@ export default function BranchEditor({ branches, onChange }: BranchEditorProps) 
           color: var(--primary-strong);
         }
         .add-branch {
+          align-self: flex-start;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 6px;
-          min-height: 44px;
+          gap: 5px;
+          height: 34px;
+          min-height: 34px;
           padding: 0 14px;
-          border-radius: var(--r-md);
-          border: 1.5px dashed var(--border-strong);
+          border-radius: var(--r-full);
+          border: 1px dashed var(--border-strong);
           background: var(--surface-2);
           color: var(--primary-strong);
           font-family: inherit;
-          font-size: 13.5px;
+          font-size: 12.5px;
           font-weight: 700;
           cursor: pointer;
           transition: border-color var(--dur-fast) var(--ease),

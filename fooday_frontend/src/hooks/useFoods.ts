@@ -41,7 +41,15 @@ export interface Food {
   id: number;
   slug: string;
   name: string;
+  /** The full menu of the place: `name` keeps the first dish for compat. */
+  dishes?: string[] | null;
   category: FoodCategory;
+  /**
+   * Every category the place belongs to (a place can sell mains, drinks AND
+   * snacks). Landed later than `category`, whose value always mirrors the
+   * first entry for backward compatibility with one-category views.
+   */
+  categories?: FoodCategory[] | null;
   restaurant: string;
   rating: number;
   image_url: string;
@@ -59,15 +67,22 @@ export interface Food {
 }
 
 const COLUMNS =
-  'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches, contributors';
+  'id, slug, name, dishes, category, categories, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches, contributors';
 
 /** Same list without the optional `contributors` column. */
 const COLUMNS_WITHOUT_CONTRIBUTORS =
-  'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches';
+  'id, slug, name, dishes, category, categories, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches';
 
 /** Same list without the optional `branches` / `contributors` columns. */
 const COLUMNS_WITHOUT_BRANCHES =
+  'id, slug, name, dishes, category, categories, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
+
+/** Without `contributors` / `branches` / `dishes` / `categories` columns. */
+const COLUMNS_MINIMAL =
   'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
+
+/** Same list without the optional `categories` column. */
+const COLUMNS_WITHOUT_CATEGORIES = COLUMNS_MINIMAL + ', branches, contributors, dishes';
 
 /** Normalise the `contributors` jsonb column into a clean array. */
 export function parseContributors(value: unknown): Contributor[] {
@@ -100,6 +115,31 @@ export function parseContributors(value: unknown): Contributor[] {
     .filter((item) => Boolean(item.id));
 }
 
+/** A jsonb-backed category list: keep only the values the app knows. */
+function parseCategories(value: unknown, fallback: unknown): FoodCategory[] {
+  const list: FoodCategory[] = [];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === 'string' && (FOOD_CATEGORIES as string[]).includes(item)) {
+        list.push(item as FoodCategory);
+      }
+    }
+  }
+  if (list.length === 0 && typeof fallback === 'string' && (FOOD_CATEGORIES as string[]).includes(fallback)) {
+    list.push(fallback as FoodCategory);
+  }
+  return Array.from(new Set(list));
+}
+
+/**
+ * True when a place belongs to a category: either through the legacy single
+ * `category` column or through the multi-category `categories` array — so a
+ * place selling mains, drinks and snacks shows up under every one of them.
+ */
+export function foodHasCategory(food: Food, category: FoodCategory): boolean {
+  return food.category === category || (food.categories ?? []).includes(category);
+}
+
 // Shared store so a newly added dish appears app-wide (Home + Profile) without reload.
 const EMPTY: Food[] = [];
 let cache: Food[] = EMPTY;
@@ -118,6 +158,20 @@ async function load(): Promise<void> {
 
   let data: unknown = primary.data;
   let error = primary.error;
+
+  if (error && /categories/i.test(error.message)) {
+    // The `categories` column may not be migrated yet — retry without it.
+    console.warn(
+      '[useFoods] could not read the "categories" column, retrying without it:',
+      error.message,
+    );
+    const fallback = await supabase
+      .from('foods')
+      .select(COLUMNS_WITHOUT_CATEGORIES)
+      .order('id', { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) {
     // The `contributors` column may not be migrated yet — retry without it.
@@ -148,10 +202,26 @@ async function load(): Promise<void> {
     error = fallback.error;
   }
 
+  if (error) {
+    // Last resort: the `dishes` column may also be unmigrated — the feed
+    // still works because `name` always carries the first dish.
+    console.warn(
+      '[useFoods] could not read the "dishes" column, retrying without it:',
+      error.message,
+    );
+    const fallback = await supabase
+      .from('foods')
+      .select(COLUMNS_MINIMAL)
+      .order('id', { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (!error) {
     const rows = (data ?? []) as Array<Record<string, unknown>>;
     cache = rows.map((row) => ({
       ...row,
+      categories: parseCategories(row.categories, row.category),
       contributors: parseContributors(row.contributors),
     })) as unknown as Food[];
     loaded = true;

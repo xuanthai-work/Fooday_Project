@@ -32,6 +32,8 @@ router = APIRouter(dependencies=[Depends(verify_internal_secret)])
 SYSTEM_INSTRUCTION = (
     "You are Foodie AI, a warm, concise food assistant for the Fooday app. "
     "Recommend ONLY dishes from the provided catalog, using their exact names. "
+    "A place may carry a full menu: use any exact menu item listed after "
+    "`menu:` as a suggested dish. "
     "Reply in the same language the user writes in. Keep the reply to 2-4 sentences. "
     "Put 1-4 exact catalog dish names that best fit the request in suggested_dishes "
     "(it may be empty if nothing fits). "
@@ -59,10 +61,15 @@ MAX_HISTORY_MESSAGES = 6
 # Columns of the `foods` table, from the richest to the most defensive set.
 CATALOG_COLUMNS = (
     "id, name, category, restaurant, rating, tag, image_url, address, "
-    "google_map_url, branches"
+    "google_map_url, branches, dishes"
 )
 CATALOG_COLUMNS_NO_BRANCHES = (
-    "id, name, category, restaurant, rating, tag, image_url, address, google_map_url"
+    "id, name, category, restaurant, rating, tag, image_url, address, "
+    "google_map_url, dishes"
+)
+CATALOG_COLUMNS_NO_DISHES = (
+    "id, name, category, restaurant, rating, tag, image_url, address, "
+    "google_map_url, branches"
 )
 CATALOG_COLUMNS_MINIMAL = "id, name, category, restaurant, rating, tag, image_url"
 
@@ -94,9 +101,11 @@ def _format_catalog(foods: list[dict]) -> str:
         distance_text = (
             f" · cách {distance:.1f}km" if isinstance(distance, (int, float)) else ""
         )
+        dishes = _parse_dishes(f.get("dishes"))
+        menu_text = f" · menu: {', '.join(dishes)}" if dishes else ""
         lines.append(
             f"- {f.get('name')} ({f.get('category')} · {f.get('restaurant')} · "
-            f"{f.get('rating')}★{distance_text}){tag}"
+            f"{f.get('rating')}★{distance_text}){tag}{menu_text}"
         )
     return "\n".join(lines)
 
@@ -166,11 +175,14 @@ def _score_food(food: dict, tokens: list[str], query: str) -> int:
     tag = _normalize(food.get("tag"))
     category = _normalize(food.get("category"))
     restaurant = _normalize(food.get("restaurant"))
+    dishes = [_normalize(dish) for dish in _parse_dishes(food.get("dishes")) if dish]
 
     score = 0
     for token in tokens:
         if _contains_token(name, token):
             score += 6
+        if any(_contains_token(dish, token) for dish in dishes):
+            score += 5
         if _contains_token(tag, token):
             score += 4
         if _contains_token(category, token):
@@ -178,9 +190,12 @@ def _score_food(food: dict, tokens: list[str], query: str) -> int:
         if _contains_token(restaurant, token):
             score += 2
 
-    # The user spelled the dish out: the strongest hint there is.
+    # The user spelled the dish out: the strongest hint there is — either the
+    # main name of the row or any item of its full menu.
     if name and len(name) > 2 and name in query:
         score += 10
+    if any(dish and len(dish) > 2 and dish in query for dish in dishes):
+        score += 8
     return score
 
 
@@ -202,6 +217,20 @@ def _parse_branches(value: object) -> list[dict]:
             return []
         if isinstance(parsed, list):
             return [branch for branch in parsed if isinstance(branch, dict)]
+    return []
+
+
+def _parse_dishes(value: object) -> list[str]:
+    """Normalise the `dishes` jsonb column into a list of dish names."""
+    if isinstance(value, list):
+        return [str(dish).strip() for dish in value if str(dish).strip()]
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+        if isinstance(parsed, list):
+            return [str(dish).strip() for dish in parsed if str(dish).strip()]
     return []
 
 
@@ -376,7 +405,12 @@ def _fetch_catalog() -> list[dict]:
     """Read the whole dish catalog, tolerating missing optional columns."""
     if config.supabase is None:
         return []
-    for columns in (CATALOG_COLUMNS, CATALOG_COLUMNS_NO_BRANCHES, CATALOG_COLUMNS_MINIMAL):
+    for columns in (
+        CATALOG_COLUMNS,
+        CATALOG_COLUMNS_NO_BRANCHES,
+        CATALOG_COLUMNS_NO_DISHES,
+        CATALOG_COLUMNS_MINIMAL,
+    ):
         try:
             response = (
                 config.supabase.table("foods")
@@ -525,19 +559,23 @@ def _food_priority(food: dict) -> tuple[float, float]:
 
 
 def _build_food_index(foods: list[dict]) -> dict[str, dict]:
-    """Index the catalog by dish name.
+    """Index the catalog by dish name — both `name` and every menu item.
 
     Several rows can share a name (the same buffet in different restaurants);
     the closest outlet wins, so the card points at the place near the user.
+    Each entry keeps `_catalog_name`, the exact dish label that was indexed.
     """
     index: dict[str, dict] = {}
     for food in foods:
-        key = _normalize(food.get("name"))
-        if not key:
-            continue
-        current = index.get(key)
-        if current is None or _food_priority(food) < _food_priority(current):
-            index[key] = food
+        entries = [str(food.get("name") or "").strip()]
+        entries.extend(dish for dish in _parse_dishes(food.get("dishes")) if dish)
+        for entry in entries:
+            key = _normalize(entry)
+            if not key:
+                continue
+            current = index.get(key)
+            if current is None or _food_priority(food) < _food_priority(current):
+                index[key] = {**food, "_catalog_name": entry}
     return index
 
 
@@ -555,7 +593,7 @@ def _validate_dishes(
         food = foods_by_name.get(_normalize(name))
         if food is None:
             continue
-        canonical = str(food.get("name") or name)
+        canonical = str(food.get("_catalog_name") or food.get("name") or name)
         if canonical not in dishes:
             dishes.append(canonical)
     return dishes[:4]
@@ -572,7 +610,7 @@ def _build_cards(dishes: list[str], foods_by_name: dict[str, dict]) -> list[Dish
         cards.append(
             DishCardInfo(
                 id=int(food.get("id") or 0),
-                name=str(food.get("name") or ""),
+                name=str(food.get("_catalog_name") or food.get("name") or name),
                 restaurant=str(food.get("restaurant") or ""),
                 rating=_rating_of(food),
                 image_url=str(food.get("image_url") or ""),

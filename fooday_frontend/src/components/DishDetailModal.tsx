@@ -691,6 +691,24 @@ export default function DishDetailModal({
               </button>
             </div>
 
+            {/* Full menu of the place — vivid culinary pills when there are
+                several dishes */}
+            {currentDish.dishes && currentDish.dishes.length > 1 && (
+              <div className="detail-menu" role="group" aria-label={t.addDish.menuSectionTitle}>
+                <span className="detail-menu-title">
+                  <UtensilsCrossed size={13} />
+                  {t.addDish.menuSectionTitle}
+                </span>
+                <div className="menu-chips">
+                  {currentDish.dishes.map((menuDish) => (
+                    <span key={menuDish} className="menu-chip">
+                      {menuDish}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {hashtags.length > 0 && (
               <div className="detail-tags">
                 {hashtags.map((h) => (
@@ -1564,6 +1582,46 @@ export default function DishDetailModal({
           font-size: 0.6875rem;
           font-weight: 700;
           letter-spacing: 0.02em;
+        }
+        .detail-menu {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin: 10px 0 16px;
+          padding: 12px 14px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--primary-soft-2);
+          background: var(--primary-soft);
+        }
+        .detail-menu-title {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.6875rem;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--primary-strong);
+        }
+        .detail-menu-title :global(svg) {
+          color: var(--primary-strong);
+        }
+        .menu-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+        .menu-chip {
+          display: inline-flex;
+          align-items: center;
+          padding: 5px 12px;
+          border-radius: var(--r-full);
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          font-size: 0.75rem;
+          font-weight: 700;
+          line-height: 1.3;
+          box-shadow: var(--shadow-primary);
         }
         .info-list {
           display: flex;

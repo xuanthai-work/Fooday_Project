@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { User } from '@supabase/supabase-js';
-import { X, Upload, Star, Loader2 } from 'lucide-react';
+import { X, Upload, Loader2, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { refreshFoods, Food, FoodCategory, FOOD_CATEGORIES, Contributor, parseContributors } from '@/hooks/useFoods';
@@ -14,8 +14,6 @@ import { isGoogleMapsUrl } from '@/lib/maps';
 import { parseBranches } from '@/lib/geo';
 import DishNameAutocomplete from './DishNameAutocomplete';
 import BranchEditor, { createBranchDraft, type BranchDraft } from './BranchEditor';
-
-export { TRENDING_HASHTAGS };
 
 interface EditDishModalProps {
   dish: Food;
@@ -28,7 +26,7 @@ interface EditDishModalProps {
  * its creator. The creator keeps living in `created_by` and is stored as the
  * first entry of the list with the `creator` role.
  */
-function buildContributors(dish: Food, user: User | null): Contributor[] {
+export function buildContributors(dish: Food, user: User | null): Contributor[] {
   const list = parseContributors(dish.contributors);
   if (!user) return list;
 
@@ -72,17 +70,51 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   const { t } = useTranslation();
   const { user } = useAuth();
 
-  const [name, setName] = useState(dish.name ?? '');
+  // The multi-dish menu: `dish.dishes` when present, otherwise the legacy
+  // joined `name` ("Xiên nướng, Nước ép") is split back into chips.
+  const [dishList, setDishList] = useState<string[]>(() => {
+    const stored = Array.isArray(dish.dishes)
+      ? dish.dishes.map((item) => item.trim()).filter(Boolean)
+      : [];
+    if (stored.length > 0) return stored;
+    // Legacy row: the menu was joined into `name` ("A, B") — split it back.
+    const joined = (dish.name ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return joined.length > 0 ? joined : [];
+  });
+  const [dishInput, setDishInput] = useState('');
+  // The first dish stands in for the legacy single-name field — it feeds the
+  // image suggestions and the current single-name views.
+  const name = dishList[0] ?? '';
   const [restaurant, setRestaurant] = useState(dish.restaurant ?? '');
   const [googleMapUrl, setGoogleMapUrl] = useState(dish.google_map_url ?? '');
-  const [category, setCategory] = useState<FoodCategory>(dish.category ?? 'Foods');
+  // Multi-category state: the stored `category` (legacy single value) and the
+  // `categories` jsonb array are merged; every dish keeps at least one pick.
+  const [selectedCategories, setSelectedCategories] = useState<FoodCategory[]>(() => {
+    const stored = Array.isArray(dish.categories)
+      ? (dish.categories as string[]).filter((c): c is FoodCategory =>
+          (FOOD_CATEGORIES as string[]).includes(c),
+        )
+      : [];
+    const legacy =
+      dish.category && (FOOD_CATEGORIES as string[]).includes(dish.category)
+        ? [dish.category]
+        : [];
+    const merged = Array.from(new Set([...legacy, ...stored]));
+    return merged.length > 0 ? merged : ['Foods'];
+  });
   const [address, setAddress] = useState(dish.address ?? '');
   const [isResolvingMap, setIsResolvingMap] = useState(false);
   const [openingTime, setOpeningTime] = useState(dish.opening_time ?? '');
-  const [selectedTags, setSelectedTags] = useState<string[]>(() => parseHashtags(dish.tag));
-  const [tagInput, setTagInput] = useState('');
+  // TikTok-style hashtags: the raw serialized string the user sees + the
+  // token at the caret that drives the suggestion dropdown.
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const [tagText, setTagText] = useState(() => parseHashtags(dish.tag).join(' '));
+  const [tagWord, setTagWord] = useState('');
+  const [tagSuggestOpen, setTagSuggestOpen] = useState(false);
   const [reviewNote, setReviewNote] = useState(dish.review_note ?? '');
-  const [rating, setRating] = useState(Number(dish.rating ?? 5));
   const [imageList, setImageList] = useState<string[]>(
     dish.images && dish.images.length > 0
       ? dish.images
@@ -105,6 +137,24 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Enter, a comma or the "+" button turns the typed text into dish chips.
+  const handleAddDish = (raw: string) => {
+    const parts = raw
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    setDishInput('');
+    if (parts.length === 0) return;
+    setDishList((prev) => {
+      const next = [...prev];
+      for (const part of parts) if (!next.includes(part)) next.push(part);
+      return next;
+    });
+  };
+
+  const handleRemoveDish = (item: string) =>
+    setDishList((prev) => prev.filter((existing) => existing !== item));
 
   // Esc to close
   useEffect(() => {
@@ -210,26 +260,86 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
     setImageList((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const canSubmit = Boolean(name.trim() && restaurant.trim() && imageList.length > 0) && !busy;
+  const canSubmit = Boolean(dishList.length > 0 && restaurant.trim() && imageList.length > 0) && !busy;
 
-  const handleAddTag = (raw: string) => {
-    const normalized = normalizeSingleHashtag(raw);
-    setTagInput('');
-    if (!normalized) return;
-    setSelectedTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+  const toggleCategory = (c: FoodCategory) => {
+    // Multi-select: tap to add, tap again to remove — but never empty the list.
+    setSelectedCategories((prev) => {
+      if (prev.includes(c)) {
+        return prev.length > 1 ? prev.filter((item) => item !== c) : prev;
+      }
+      return [...prev, c];
+    });
   };
 
-  const handleTogglePreset = (preset: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(preset) ? prev.filter((item) => item !== preset) : [...prev, preset],
-    );
+  /* ===== TikTok-style hashtag input ===== */
+
+  const tagQuery = normalizeSingleHashtag(tagWord).replace(/^#/, '');
+  const tagSuggestions = useMemo(
+    () =>
+      TRENDING_HASHTAGS.filter(
+        (preset) =>
+          !parseHashtags(tagText).includes(preset) && (!tagQuery || preset.slice(1).includes(tagQuery)),
+      ).slice(0, 6),
+    [tagText, tagQuery],
+  );
+
+  /** Extracts the token at the caret and keeps the dropdown in sync. */
+  const refreshTagWord = (el: HTMLInputElement) => {
+    const caret = el.selectionStart ?? el.value.length;
+    const word = el.value.slice(0, caret).match(/[^\s,]*$/)?.[0] ?? '';
+    setTagWord(word);
+    setTagSuggestOpen(word.trim().length > 0);
+  };
+
+  const handleTagChange = (next: string) => {
+    if (/[\s,]$/.test(next)) {
+      // A token was completed (space or comma): normalize it and auto-# it.
+      const tokens = parseHashtags(next);
+      setTagText(tokens.length > 0 ? `${tokens.join(' ')} ` : '');
+      setTagWord('');
+      setTagSuggestOpen(false);
+    } else {
+      setTagText(next);
+      if (tagInputRef.current) refreshTagWord(tagInputRef.current);
+    }
+  };
+
+  const handleTagSuggestClosed = () => {
+    setTagSuggestOpen(false);
+    setTagWord('');
+  };
+
+  const handleTagBlur = () => {
+    handleTagSuggestClosed();
+    setTagText((prev) => parseHashtags(prev).join(' '));
   };
 
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+    if (e.key === 'Enter') {
+      // Never let Enter submit the form while typing hashtags.
       e.preventDefault();
-      handleAddTag(tagInput);
+      setTagText((prev) => parseHashtags(prev).join(' '));
+      handleTagSuggestClosed();
+    } else if (e.key === 'Escape') {
+      handleTagSuggestClosed();
     }
+  };
+
+  /** Clicking a suggestion fills it in and appends a space to keep typing. */
+  const pickTagSuggestion = (preset: string) => {
+    const el = tagInputRef.current;
+    const caret = el?.selectionStart ?? tagText.length;
+    const before = tagText.slice(0, caret).replace(/[^\s,]*$/, '');
+    const after = tagText.slice(caret).replace(/^[^\s,]*/, '');
+    const inserted = `${before}${preset} `;
+    setTagText(`${inserted}${after}`);
+    handleTagSuggestClosed();
+    window.requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(inserted.length, inserted.length);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -238,9 +348,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
     setBusy(true);
     setError(null);
 
-    const finalTag = serializeHashtags(
-      tagInput.trim() ? [...selectedTags, tagInput] : selectedTags,
-    );
+    const finalTag = serializeHashtags(parseHashtags(tagText));
 
     // Keep only the branches that carry real information.
     const cleanBranches = branches
@@ -253,11 +361,15 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
       }))
       .filter((branch) => branch.name || branch.address || branch.google_map_url);
 
+    // `name` keeps the first dish so every legacy view stays alive; the full
+    // menu goes to `dishes` (with a joined-string fallback when the column is
+    // not migrated yet). The `categories` array keeps every selected category;
+    // the legacy `category` column keeps the first pick for older views.
     const basePayload = {
-      name: name.trim(),
+      name: dishList[0] ?? '',
       restaurant: restaurant.trim(),
-      category,
-      rating,
+      category: selectedCategories[0],
+      rating: Number(dish.rating ?? 5),
       address: address.trim() || null,
       google_map_url: googleMapUrl.trim() || null,
       opening_time: openingTime.trim() || null,
@@ -267,30 +379,43 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
       images: imageList,
       branches: cleanBranches.length > 0 ? cleanBranches : null,
     };
-
-    // Who helped build this dish.
-    const payload = {
+    // The `categories` column is newer than `category`; likewise `dishes` and
+    // `contributors` may be unmigrated. The row starts complete and each
+    // failing column is simply stripped before retrying.
+    let row: Record<string, unknown> = {
       ...basePayload,
+      categories: selectedCategories,
+      dishes: dishList,
       contributors: buildContributors(dish, user),
     };
+    /** The row minus one column (for databases without that migration). */
+    const stripRowField = (field: string): Record<string, unknown> => {
+      const rest: Record<string, unknown> = { ...row };
+      delete rest[field];
+      return rest;
+    };
 
-    let { data, error: updErr } = await supabase
-      .from('foods')
-      .update(payload)
-      .eq('id', dish.id)
-      .select()
-      .single();
+    const updateAttempt = (payload: Record<string, unknown>) =>
+      supabase.from('foods').update(payload).eq('id', dish.id).select().single();
+
+    let { data, error: updErr } = await updateAttempt(row);
+
+    if (updErr && /categories/i.test(updErr.message)) {
+      row = stripRowField('categories');
+      ({ data, error: updErr } = await updateAttempt(row));
+    }
+
+    if (updErr && /dishes/i.test(updErr.message)) {
+      // The `dishes` column is not migrated yet — the joined string in `name`
+      // keeps the whole menu readable.
+      row = { ...stripRowField('dishes'), name: dishList.join(', ') };
+      ({ data, error: updErr } = await updateAttempt(row));
+    }
 
     if (updErr && /contributors/i.test(updErr.message)) {
       // The `contributors` column is not migrated yet — save without it.
-      const retry = await supabase
-        .from('foods')
-        .update(basePayload)
-        .eq('id', dish.id)
-        .select()
-        .single();
-      data = retry.data;
-      updErr = retry.error;
+      row = stripRowField('contributors');
+      ({ data, error: updErr } = await updateAttempt(row));
     }
 
     if (updErr) {
@@ -412,6 +537,72 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             )}
           </div>
 
+          {/* Dishes — tag-list input: Enter / comma / "+" adds a chip */}
+          <div className="field">
+            <span className="label">
+              {t.addDish.dishesLabel} <span className="required-mark">*</span>
+            </span>
+
+            {dishList.length > 0 && (
+              <div className="selected-tags">
+                {dishList.map((item) => (
+                  <span key={item} className="selected-tag-chip">
+                    {item}
+                    <button
+                      type="button"
+                      className="remove-tag-btn"
+                      onClick={() => handleRemoveDish(item)}
+                      aria-label={`Remove ${item}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="tag-input-row">
+              <DishNameAutocomplete
+                value={dishInput}
+                onChange={setDishInput}
+                onCommit={handleAddDish}
+                placeholder={t.addDish.dishInputPlaceholder}
+                aria-label={t.addDish.dishesLabel}
+              />
+              <button
+                type="button"
+                className="tag-add-btn"
+                onClick={() => handleAddDish(dishInput)}
+                aria-label={t.addDish.addDishBtn}
+                title={t.addDish.addDishBtn}
+              >
+                <Plus size={19} strokeWidth={2.4} />
+              </button>
+            </div>
+
+            {dishList.length === 0 && (
+              <span className="field-hint">{t.addDish.minOneDishRequired}</span>
+            )}
+          </div>
+
+          {/* Category — multi-select: a place can sell mains, drinks AND snacks */}
+          <div className="field">
+            <span className="label">{t.editDish.category}</span>
+            <div className="chips">
+              {FOOD_CATEGORIES.map((c) => (
+                <button
+                  type="button"
+                  key={c}
+                  className={`chip ${selectedCategories.includes(c) ? 'active' : ''}`}
+                  onClick={() => toggleCategory(c)}
+                  aria-pressed={selectedCategories.includes(c)}
+                >
+                  {t.home.categories[c]}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Restaurant */}
           <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
             <span className="label">{t.editDish.restaurant}</span>
@@ -423,49 +614,16 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             />
           </label>
 
-          {/* Dish name */}
-          <div className="field">
-            <span className="label">{t.editDish.dishName}</span>
-            <DishNameAutocomplete
-              value={name}
-              onChange={setName}
-              placeholder={t.addDish.dishNamePlaceholder}
-              required
-              aria-label={t.editDish.dishName}
-            />
-          </div>
+          {/* Google Maps link + address — one grouped field; the maps link auto-
+              fills the address. The compact branch button lives right under the
+              address. */}
+          <div className="field maps-address-group">
+            <span className="label">
+              {t.map.googleMapLabel} <span className="required-mark">*</span>
+              <span className="label-divider" aria-hidden="true">|</span>
+              {t.map.addressLabel}
+            </span>
 
-          {/* Category */}
-          <div className="field">
-            <span className="label">{t.editDish.category}</span>
-            <div className="chips">
-              {FOOD_CATEGORIES.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  className={`chip ${category === c ? 'active' : ''}`}
-                  onClick={() => setCategory(c)}
-                >
-                  {t.home.categories[c]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Opening hours */}
-          <label className="field">
-            <span className="label">{t.editDish.openingTime}</span>
-            <input
-              value={openingTime}
-              onChange={(e) => setOpeningTime(e.target.value)}
-              placeholder={t.detail.noHours}
-              aria-label={t.editDish.openingTime}
-            />
-          </label>
-
-          {/* Google Maps link — auto-resolves the address */}
-          <label className="field">
-            <span className="label">{t.map.googleMapLabel}</span>
             <input
               value={googleMapUrl}
               onChange={(e) => handleGoogleMapUrlChange(e.target.value)}
@@ -478,11 +636,9 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             {googleMapUrl.trim() && !isGoogleMapsUrl(googleMapUrl) && (
               <span className="field-hint error-hint">{t.map.googleMapRequired}</span>
             )}
-          </label>
 
-          {/* Address — auto-filled from the Google Maps link */}
-          <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
-            <span className="label">{t.map.addressLabel}</span>
+            <span className="field-divider" aria-hidden="true">|</span>
+
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
@@ -491,6 +647,7 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
               }
               disabled={isResolvingMap}
               aria-busy={isResolvingMap}
+              className={isResolvingMap ? 'is-resolving' : ''}
               aria-label={t.map.addressLabel}
             />
             {isResolvingMap && (
@@ -499,111 +656,95 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
                 {t.map.resolvingAddress}
               </span>
             )}
-          </label>
 
-          {/* Branches — the extra outlets of the same restaurant */}
-          <div className="field">
-            <span className="label">{t.branches.branchesSection}</span>
             <BranchEditor branches={branches} onChange={setBranches} />
           </div>
 
-          {/* Notes */}
-          <label className="field">
-            <span className="label">{t.editDish.reviewNote}</span>
-            <textarea
-              value={reviewNote}
-              onChange={(e) => setReviewNote(e.target.value)}
-              rows={3}
-              placeholder={t.detail.reviewNote}
-              aria-label={t.editDish.reviewNote}
-            />
-          </label>
-
-          {/* Tags — multi-select presets + custom hashtag input */}
-          <div className="field">
-            <span className="label">{t.editDish.tag}</span>
-
-            {selectedTags.length > 0 && (
-              <div className="selected-tags">
-                {selectedTags.map((selected) => (
-                  <span key={selected} className="selected-tag-chip">
-                    {selected}
-                    <button
-                      type="button"
-                      className="remove-tag-btn"
-                      onClick={() =>
-                        setSelectedTags((prev) => prev.filter((item) => item !== selected))
-                      }
-                      aria-label={`Remove ${selected}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="tag-input-row">
+          {/* Opening hours & note — one two-column row */}
+          <div className="two-cols-row">
+            <label className="field">
+              <span className="label">{t.editDish.openingTime}</span>
               <input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                placeholder={t.editDish.tagPlaceholder}
-                aria-label={t.editDish.tag}
+                value={openingTime}
+                onChange={(e) => setOpeningTime(e.target.value)}
+                placeholder={t.detail.noHours}
+                aria-label={t.editDish.openingTime}
               />
-              <button
-                type="button"
-                className="tag-add-btn"
-                onClick={() => handleAddTag(tagInput)}
-              >
-                {t.editDish.addTag}
-              </button>
-            </div>
-
-            <div className="hashtag-presets">
-              <span className="hashtag-presets-label">{t.editDish.trendingHashtagsLabel}</span>
-              <div className="hashtag-chips">
-                {TRENDING_HASHTAGS.map((preset) => {
-                  const isSelected = selectedTags.includes(preset);
-                  return (
-                    <button
-                      type="button"
-                      key={preset}
-                      className={`hashtag-chip ${isSelected ? 'active' : ''}`}
-                      onClick={() => handleTogglePreset(preset)}
-                      aria-pressed={isSelected}
-                    >
-                      {preset}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Rating */}
-          <div className="field">
-            <span className="label">{t.editDish.rating}</span>
-            <div className="stars">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  type="button"
-                  key={n}
-                  className="star"
-                  onClick={() => setRating(n)}
-                  aria-label={t.addDish.starAria(n)}
-                >
-                  <Star
-                    size={22}
-                    fill={n <= rating ? 'var(--star)' : 'none'}
-                    color={n <= rating ? 'var(--star)' : 'var(--text-faint)'}
-                  />
-                </button>
-              ))}
-            </div>
+            </label>
+            <label className="field">
+              <span className="label">{t.editDish.reviewNote}</span>
+              <textarea
+                className="note-textarea"
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                rows={1}
+                placeholder={t.addDish.reviewNotePlaceholder}
+                aria-label={t.editDish.reviewNote}
+              />
+            </label>
           </div>
 
           {error && <div className="error">{error}</div>}
+
+          {/* Tags — TikTok-style hashtags: type separated by spaces with a
+              vertical suggestion dropdown under the input. Always the last
+              field of the form, right above the action buttons. */}
+          <div className="field">
+            <span className="label">{t.editDish.tag}</span>
+
+            <div className="tag-input-row hashtag-wrap">
+              <input
+                ref={tagInputRef}
+                value={tagText}
+                onChange={(e) => handleTagChange(e.target.value)}
+                onKeyDown={handleTagKeyDown}
+                onKeyUp={(e) => refreshTagWord(e.currentTarget)}
+                onClick={(e) => refreshTagWord(e.currentTarget)}
+                onFocus={(e) => refreshTagWord(e.currentTarget)}
+                onBlur={handleTagBlur}
+                placeholder={t.editDish.tagPlaceholder}
+                aria-label={t.editDish.tag}
+                autoComplete="off"
+                spellCheck={false}
+              />
+
+              {tagSuggestOpen && tagSuggestions.length > 0 && (
+                <div className="tag-suggest-list" role="listbox" aria-label={t.editDish.tag}>
+                  <span className="tag-suggest-head">{t.editDish.trendingHashtagsLabel}</span>
+                  {tagSuggestions.map((preset) => {
+                    const tag = preset.slice(1);
+                    const start = tag.indexOf(tagQuery);
+                    return (
+                      <button
+                        type="button"
+                        key={preset}
+                        role="option"
+                        aria-selected={false}
+                        className="tag-suggest-item"
+                        // Keep the input focused — a blur would close the dropdown.
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pickTagSuggestion(preset)}
+                      >
+                        <span className="tag-suggest-hash" aria-hidden="true">
+                          #
+                        </span>
+                        <span className="tag-suggest-name">
+                          {start === -1 ? (
+                            tag
+                          ) : (
+                            <>
+                              <strong>{tag.slice(start, start + tagQuery.length)}</strong>
+                              {tag.slice(start + tagQuery.length)}
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="actions">
             <button type="button" className="cancel" onClick={onClose}>
@@ -882,6 +1023,9 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           font-weight: 600;
           line-height: 1.3;
         }
+        .required-mark {
+          color: var(--heart);
+        }
         .resolving-hint {
           color: var(--primary-strong);
         }
@@ -909,62 +1053,119 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           color: var(--primary-contrast);
           border-color: transparent;
         }
-        .stars {
-          display: flex;
-          gap: 4px;
+        /* Google Maps link + address — one grouped field with a thin divider */
+        .label-divider {
+          margin: 0 5px;
+          color: var(--text-faint);
+          font-weight: 700;
         }
-        .star {
-          background: none;
-          border: none;
-          padding: 2px;
-          cursor: pointer;
-          line-height: 0;
+        .maps-address-group input.is-resolving {
+          opacity: 0.5;
+          cursor: progress;
         }
-        .hashtag-presets {
+        .field-divider {
+          text-align: center;
+          color: var(--text-faint);
+          font-weight: 700;
+          font-size: 14px;
+          line-height: 1;
+          margin: 2px 0;
+        }
+        /* Opening hours & note — one two-column row */
+        .two-cols-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+        @media (max-width: 480px) {
+          .two-cols-row {
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+          }
+        }
+        /* TikTok-style hashtag suggestion dropdown */
+        .hashtag-wrap {
+          position: relative;
+          align-items: stretch;
+        }
+        .tag-suggest-list {
+          position: absolute;
+          top: calc(100% + 4px);
+          left: 0;
+          right: 0;
+          z-index: 30;
           display: flex;
           flex-direction: column;
-          gap: 6px;
-          margin-top: 3px;
-        }
-        .hashtag-presets-label {
-          font-size: 11.5px;
-          font-weight: 600;
-          color: var(--text-faint);
-          letter-spacing: 0.01em;
-        }
-        .hashtag-chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-        }
-        .hashtag-chip {
-          height: 24px;
-          padding: 3px 8px;
-          display: inline-flex;
-          align-items: center;
-          border-radius: var(--r-full);
+          gap: 2px;
+          max-height: 216px;
+          overflow-y: auto;
+          padding: 6px;
+          border-radius: var(--r-md);
           border: 1px solid var(--border);
-          background: var(--surface-2);
-          color: var(--text-soft);
-          font-size: 12px;
+          background: var(--surface);
+          box-shadow: var(--shadow-lg);
+        }
+        .tag-suggest-head {
+          padding: 2px 10px 4px;
+          font-size: 11px;
           font-weight: 600;
-          line-height: 1;
+          letter-spacing: 0.01em;
+          color: var(--text-faint);
+        }
+        .tag-suggest-item {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 8px 10px;
+          border: none;
+          border-radius: var(--r-sm);
+          background: transparent;
+          color: var(--text);
+          font-family: inherit;
+          font-size: 13.5px;
+          font-weight: 600;
+          line-height: 1.2;
+          text-align: left;
           white-space: nowrap;
           cursor: pointer;
-          transition: background var(--dur-fast) var(--ease),
-            color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
-            transform var(--dur-fast) var(--ease);
+          transition: background var(--dur-fast) var(--ease);
         }
-        .hashtag-chip:hover {
-          transform: translateY(-1px);
-          border-color: var(--primary);
+        .tag-suggest-item:hover {
+          background: var(--primary-soft);
+        }
+        .tag-suggest-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tag-suggest-item strong {
           color: var(--primary-strong);
+          font-weight: 800;
         }
-        .hashtag-chip.active {
-          background: var(--grad-primary);
+        .tag-suggest-hash {
+          color: var(--primary-strong);
+          font-weight: 800;
+        }
+        /* Compact one-line note field, last field of the form */
+        .field textarea.note-textarea {
+          width: 100%;
+          height: 44px;
+          min-height: 44px;
+          padding: 10px 14px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text);
+          font-family: inherit;
+          font-size: 14.5px;
+          line-height: 1.3;
+          outline: none;
+          resize: none;
+          overflow-y: auto;
+          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .field textarea.note-textarea:focus {
           border-color: var(--primary);
-          color: var(--primary-contrast);
-          box-shadow: var(--shadow-primary);
+          box-shadow: 0 0 0 3px var(--ring);
         }
         .selected-tags {
           display: flex;
@@ -1009,20 +1210,28 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           min-width: 0;
           width: auto;
         }
+        .tag-input-row :global(.root) {
+          flex: 1;
+          min-width: 0;
+        }
         .tag-add-btn {
           flex-shrink: 0;
+          width: 44px;
           height: 44px;
-          padding: 0 14px;
+          padding: 0;
+          display: grid;
+          place-items: center;
           border-radius: var(--r-md);
           border: 1px solid var(--primary-soft-2);
           background: var(--primary-soft);
           color: var(--primary-strong);
-          font-family: inherit;
-          font-size: 13.5px;
-          font-weight: 700;
           cursor: pointer;
           transition: background var(--dur-fast) var(--ease),
-            border-color var(--dur-fast) var(--ease);
+            border-color var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease);
+        }
+        .tag-add-btn:active {
+          transform: scale(0.96);
         }
         .tag-add-btn:hover {
           background: var(--primary-soft-2);

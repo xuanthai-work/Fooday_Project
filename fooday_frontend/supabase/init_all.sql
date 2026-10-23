@@ -10,6 +10,7 @@ create table if not exists public.foods (
   slug         text unique not null,
   name         text not null,
   category     text not null check (category in ('Foods','Drinks','Snacks')),
+  categories   jsonb default '[]'::jsonb,
   restaurant   text not null,
   rating       numeric(2,1) not null default 4.5,
   image_url    text not null,
@@ -30,9 +31,17 @@ alter table public.foods
   add column if not exists address      text,
   add column if not exists opening_time text,
   add column if not exists review_note  text,
+  add column if not exists categories   jsonb default '[]'::jsonb,
   add column if not exists branches     jsonb default '[]'::jsonb,
   add column if not exists contributors jsonb default '[]'::jsonb,
   add column if not exists created_by   uuid references auth.users (id) on delete set null default auth.uid();
+
+-- Quán cũ (chỉ có 1 danh mục) vẫn hoạt động: category trở thành mảng của nó
+update public.foods
+set categories = jsonb_build_array(category)
+where categories is null
+   or jsonb_typeof(categories) <> 'array'
+   or jsonb_array_length(categories) = 0;
 
 -- Bật Row Level Security (RLS) cho foods
 alter table public.foods enable row level security;

@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Search, Heart, Star, Sparkles, MapPin } from 'lucide-react';
-import { useFoods, type Food } from '@/hooks/useFoods';
+import { useFoods, foodHasCategory, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useTranslation } from '@/i18n/LanguageContext';
@@ -95,9 +95,14 @@ const MOOD_TASKS: MoodTaskOption[] = [
 
 function itemMatchesMood(item: Food, mood: MoodTaskOption): boolean {
   if (mood.id === 'All') return true;
-  if (mood.id === 'AfternoonTea' && item.category === 'Snacks') return true;
-  const fields = [item.name, item.restaurant, item.tag, item.review_note];
-  return mood.keywords.some((keyword) => {
+  if (mood.id === 'AfternoonTea' && foodHasCategory(item, 'Snacks')) return true;
+  const fields = [
+    item.name,
+    item.restaurant,
+    item.tag,
+    item.review_note,
+    (item.dishes ?? []).join(' · '),
+  ];  return mood.keywords.some((keyword) => {
     const k = normalize(keyword);
     return fields.some((field) => field != null && normalize(field).includes(k));
   });
@@ -179,9 +184,15 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
     const q = normalize(searchQuery);
     const matchesSearch =
       q === '' ||
-      [item.name, item.restaurant, item.tag, item.address, item.review_note].some(
-        (field) => field != null && normalize(field).includes(q),
-      );
+      [
+        item.name,
+        item.restaurant,
+        item.tag,
+        item.address,
+        item.review_note,
+        // Search hits the whole menu: any dish in `dishes` finds the place.
+        (item.dishes ?? []).join(' · '),
+      ].some((field) => field != null && normalize(field).includes(q));
     return matchesMood && matchesSearch;
   });
 
@@ -270,6 +281,11 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
             const hasDistance = branchSummary?.distanceKm != null;
             const isMultiBranch = Boolean(branchSummary && branchSummary.total > 1);
             const showDistanceBadge = hasDistance || isMultiBranch;
+            // Several dishes on one card are shown as a joined menu line.
+            const dishTitle =
+              item.dishes && item.dishes.length > 1
+                ? item.dishes.join(' · ')
+                : item.name;
             return (
               <article
                 key={item.id}
@@ -288,14 +304,14 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                 <div className="card-media">
                   <Image
                     src={item.image_url}
-                    alt={item.name}
+                    alt={dishTitle}
                     fill
                     sizes="(max-width: 640px) 50vw, 290px"
                     className="card-img"
                     style={{ objectFit: 'cover' }}
                     priority={index < 4}
                   />
-                  {item.name && <span className="card-type-tag">{item.name}</span>}
+                  {dishTitle && <span className="card-type-tag">{dishTitle}</span>}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -332,7 +348,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNavigateToChat(t.home.askAbout(item.name, item.restaurant));
+                        onNavigateToChat(t.home.askAbout(dishTitle, item.restaurant));
                       }}
                       className="ask-ai"
                     >
