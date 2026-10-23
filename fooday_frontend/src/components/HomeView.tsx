@@ -4,10 +4,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Search, Heart, Star, Sparkles, MapPin } from 'lucide-react';
-import { useFoods, foodHasCategory, type Food } from '@/hooks/useFoods';
+import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useTranslation } from '@/i18n/LanguageContext';
+import { MOOD_TASKS, itemMatchesMood, type MoodTaskCategory } from '@/lib/moods';
 import {
   findNearestBranch,
   formatDistance,
@@ -29,84 +30,6 @@ const normalize = (str: string) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
     .trim();
-
-export type MoodTaskCategory =
-  | 'All'
-  | 'OfficeLunch'
-  | 'Gathering'
-  | 'Healthy'
-  | 'WorkCafe'
-  | 'AfternoonTea'
-  | 'Romantic';
-
-interface MoodTaskOption {
-  id: MoodTaskCategory;
-  labelKey:
-    | 'all'
-    | 'officeLunch'
-    | 'gathering'
-    | 'healthy'
-    | 'workCafe'
-    | 'afternoonTea'
-    | 'romantic';
-  icon: string;
-  keywords: string[];
-}
-
-const MOOD_TASKS: MoodTaskOption[] = [
-  { id: 'All', labelKey: 'all', icon: '🌟', keywords: [] },
-  {
-    id: 'OfficeLunch',
-    labelKey: 'officeLunch',
-    icon: '💼',
-    keywords: ['cơm', 'bún', 'phở', 'mì', 'hủ tiếu', 'bánh mì', 'xôi', 'trưa', 'lunch', 'cơm tấm'],
-  },
-  {
-    id: 'Gathering',
-    labelKey: 'gathering',
-    icon: '🍻',
-    keywords: ['lẩu', 'nướng', 'bbq', 'buffet', 'nhậu', 'tụ tập', 'bia', 'hải sản'],
-  },
-  {
-    id: 'Healthy',
-    labelKey: 'healthy',
-    icon: '🥗',
-    keywords: ['chay', 'vegan', 'salad', 'healthy', 'clean', 'thanh đạm', 'rau'],
-  },
-  {
-    id: 'WorkCafe',
-    labelKey: 'workCafe',
-    icon: '☕',
-    keywords: ['cà phê', 'cafe', 'coffee', 'làm việc', 'yên tĩnh', 'trà', 'tea'],
-  },
-  {
-    id: 'AfternoonTea',
-    labelKey: 'afternoonTea',
-    icon: '🧋',
-    keywords: ['trà sữa', 'ăn vặt', 'chè', 'snack', 'bánh', 'ốc', 'xiên', 'trà chiều'],
-  },
-  {
-    id: 'Romantic',
-    labelKey: 'romantic',
-    icon: '🍷',
-    keywords: ['hẹn hò', 'ấm cúng', 'view đẹp', 'lãng mạn', 'steak', 'bò bít tết', 'pizza', 'sushi', 'rượu', 'romantic'],
-  },
-];
-
-function itemMatchesMood(item: Food, mood: MoodTaskOption): boolean {
-  if (mood.id === 'All') return true;
-  if (mood.id === 'AfternoonTea' && foodHasCategory(item, 'Snacks')) return true;
-  const fields = [
-    item.name,
-    item.restaurant,
-    item.tag,
-    item.review_note,
-    (item.dishes ?? []).join(' · '),
-  ];  return mood.keywords.some((keyword) => {
-    const k = normalize(keyword);
-    return fields.some((field) => field != null && normalize(field).includes(k));
-  });
-}
 
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { t, lang } = useTranslation();

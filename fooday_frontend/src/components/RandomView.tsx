@@ -13,12 +13,13 @@ import {
   Star,
   Eye,
 } from 'lucide-react';
-import { useFoods, FOOD_CATEGORIES, FoodCategory, Food, foodHasCategory } from '@/hooks/useFoods';
+import { useFoods, FoodCategory, Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useEmojiRain } from '@/hooks/useEmojiRain';
 import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
+import { MOOD_TASKS, itemMatchesMood, type MoodTaskCategory } from '@/lib/moods';
 import {
   findNearestBranch,
   formatDistance,
@@ -192,7 +193,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const { bursts, trigger: triggerRain } = useEmojiRain();
   const { enabled: funEnabled } = useFunEffects();
   const { coords } = useUserLocation();
-  const [category, setCategory] = useState<FoodCategory>('Foods');
+  const [topic, setTopic] = useState<MoodTaskCategory>('All');
   const [priceTier, setPriceTier] = useState<PriceTier>('all');
   const [reel, setReel] = useState<DishGroup[]>([]);
   const [spinning, setSpinning] = useState(false);
@@ -210,10 +211,10 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
 
-  // Every dish of the category, once per unique dish name.
+  // Every dish of the chosen mood/occasion, once per unique dish name.
   const pool = useMemo(
-    () => buildDishGroups(foods.filter((f) => foodHasCategory(f, category))),
-    [foods, category],
+    () => buildDishGroups(foods.filter((f) => itemMatchesMood(f, topic))),
+    [foods, topic],
   );
 
   const initialReel = useMemo(() => buildReel(pool), [pool]);
@@ -304,9 +305,9 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     setIsTransitioning(false);
   };
 
-  const selectCategory = (c: FoodCategory) => {
+  const selectTopic = (next: MoodTaskCategory) => {
     if (spinning) return;
-    setCategory(c);
+    setTopic(next);
     resetSpin();
   };
 
@@ -389,16 +390,17 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         <h1 className="rnd-title">{t.random.title}</h1>
       </header>
 
-      <div className="rnd-chips" role="tablist" aria-label={t.random.categoryLabel}>
-        {FOOD_CATEGORIES.map((c) => (
+      <div className="rnd-chips" role="tablist" aria-label={t.random.topicLabel}>
+        {MOOD_TASKS.map((task) => (
           <button
-            key={c}
-            className={`chip ${category === c ? 'active' : ''}`}
-            onClick={() => selectCategory(c)}
+            key={task.id}
+            className={`chip mood-chip ${topic === task.id ? 'active' : ''}`}
+            onClick={() => selectTopic(task.id)}
             disabled={spinning}
-            aria-pressed={category === c}
+            aria-pressed={topic === task.id}
           >
-            {t.home.categories[c]}
+            <span className="mood-icon">{task.icon}</span>
+            {t.random.topics[task.labelKey]}
           </button>
         ))}
       </div>
@@ -441,7 +443,14 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             ))}
           </div>
         ) : (
-          <div className="roulette-empty">{t.random.empty}</div>
+          <div className="roulette-empty">
+            <p>{t.random.empty}</p>
+            {topic !== 'All' && (
+              <button className="mini-act" onClick={() => selectTopic('All')}>
+                {t.random.showAllTopics}
+              </button>
+            )}
+          </div>
         )}
         <div className="roulette-fade fade-left" />
         <div className="roulette-fade fade-right" />
@@ -661,6 +670,17 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           margin-bottom: 22px;
           background: var(--bg);
         }
+        .rnd-chips .chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 8px 13px;
+          font-size: 13px;
+        }
+        .mood-icon {
+          font-size: 0.9375rem;
+          line-height: 1;
+        }
         .price-block {
           position: relative;
           z-index: 2;
@@ -686,11 +706,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         }
         .price-chips {
           display: grid;
-          /* uneven tracks so longer ranges get the room they need */
-          grid-template-columns:
-            minmax(0, 0.85fr) minmax(0, 0.85fr) minmax(0, 1fr)
-            minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(0, 0.9fr);
-          gap: 4px;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 6px;
           margin-bottom: 0;
           width: 100%;
           flex-wrap: nowrap;
@@ -698,8 +715,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         .price-chips .price-chip {
           width: 100%;
           min-width: 0;
-          padding: 8px 3px;
-          font-size: clamp(9px, 2.9vw, 12.5px);
+          padding: 8px 4px;
+          font-size: 12px;
           line-height: 1.15;
           letter-spacing: -0.01em;
           white-space: nowrap;
@@ -798,6 +815,10 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           position: absolute;
           top: 7px;
           right: 7px;
+          max-width: calc(100% - 14px);
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
           padding: 3px 8px;
           border-radius: var(--r-full);
           background: var(--grad-primary);
@@ -900,6 +921,10 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         }
         .roulette-empty {
           padding: 46px 20px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
           text-align: center;
           color: rgba(247, 244, 238, 0.65);
           font-size: 14px;
@@ -1257,10 +1282,27 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             flex: 1 1 calc(50% - 4px);
             font-size: 12px;
           }
+          .rnd-chips {
+            gap: 7px;
+          }
+          .rnd-chips .chip {
+            padding: 7px 10px;
+            font-size: 12px;
+          }
           .place-list-head {
             align-items: flex-start;
             flex-direction: column;
             gap: 4px;
+          }
+        }
+        @media (max-width: 560px) {
+          /* Six labels never fit on a phone: two readable rows beat truncation. */
+          .price-chips {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+          .price-chips .price-chip {
+            padding: 9px 6px;
+            font-size: 12.5px;
           }
         }
         @keyframes spin {
