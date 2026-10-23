@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import {
   Mail,
@@ -14,6 +15,7 @@ import {
   Loader2,
   Medal,
   Settings,
+  X,
 } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
@@ -26,7 +28,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { LANGUAGES } from '@/i18n/translations';
 import { calculateReviewPoints } from '@/lib/reviewPhotos';
-import { nextTierOf, tierForPoints, tierProgress } from '@/lib/memberTiers';
+import { nextTierOf, tierForPoints, tierProgress, MEMBER_TIERS } from '@/lib/memberTiers';
 import DishDetailModal from './DishDetailModal';
 
 interface ProfileViewProps {
@@ -64,6 +66,29 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
       document.removeEventListener('keydown', onKey);
     };
   }, [settingsOpen]);
+
+  // The tier sheet lives in a portal, so it only renders after hydration.
+  const [mounted, setMounted] = useState(false);
+  const [tierOpen, setTierOpen] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-mount flag (SSR-safe portal)
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!tierOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTierOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [tierOpen]);
 
   const favoriteItems = [...favorites]
     .map((id) => byId[id])
@@ -249,13 +274,25 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
               </button>
             ) : (
               <div className="tier-block">
-                <span className={`tier-badge tier-${tier.id}`}>
-                  <Medal size={13} /> {t.profile.tierLabel(t.profile.tiers[tier.id])}
-                </span>
+                <button
+                  type="button"
+                  className={`tier-badge tier-${tier.id} ${tier.aura ? 'tier-aura' : ''}`}
+                  onClick={() => setTierOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={tierOpen}
+                  title={t.profile.tierModalTitle}
+                >
+                  <Medal size={13} />
+                  <span className="tier-badge-text">
+                    {t.profile.tierLabel(t.profile.tiers[tier.id])}
+                  </span>
+                </button>
                 <span className="tier-hint">
-                  {nextTier
-                    ? t.profile.tierNext(pointsToNext, t.profile.tiers[nextTier.id])
-                    : t.profile.tierMax}
+                  <span className="tier-hint-text">
+                    {nextTier
+                      ? t.profile.tierNext(pointsToNext, t.profile.tiers[nextTier.id])
+                      : t.profile.tierMax}
+                  </span>
                 </span>
                 <span
                   className="tier-track"
@@ -378,6 +415,77 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
       </div>
 
       </div>
+
+      {mounted &&
+        tierOpen &&
+        createPortal(
+          <div
+            className="tier-overlay"
+            role="presentation"
+            onClick={() => setTierOpen(false)}
+          >
+            <div
+              className="tier-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tier-sheet-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header className="tier-sheet-head">
+                <h3 id="tier-sheet-title">{t.profile.tierModalTitle}</h3>
+                <button
+                  type="button"
+                  className="tier-sheet-close"
+                  onClick={() => setTierOpen(false)}
+                  aria-label={t.profile.tierClose}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              <ul className="tier-sheet-list">
+                {MEMBER_TIERS.map((item) => {
+                  const isCurrent = item.id === tier.id;
+                  const reached = points >= item.min;
+                  return (
+                    <li
+                      key={item.id}
+                      className={`tier-sheet-item ${isCurrent ? 'is-current' : ''} ${
+                        item.aura ? 'has-aura' : ''
+                      }`}
+                    >
+                      <span
+                        className={`tier-medal tier-${item.id} ${
+                          item.aura ? 'tier-aura' : ''
+                        }`}
+                      >
+                        <Medal size={18} />
+                      </span>
+                      <span className="tier-sheet-body">
+                        <span className="tier-sheet-name">{t.profile.tiers[item.id]}</span>
+                        <span className="tier-sheet-req">
+                          {t.profile.tierRequirement(item.min)}
+                        </span>
+                      </span>
+                      {isCurrent ? (
+                        <span className="tier-sheet-tag">{t.profile.tierCurrent}</span>
+                      ) : reached ? (
+                        <Check size={18} className="tier-sheet-check" />
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <p className="tier-sheet-foot">
+                {nextTier
+                  ? t.profile.tierNext(pointsToNext, t.profile.tiers[nextTier.id])
+                  : t.profile.tierMax}
+              </p>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {selectedDish && (
         <DishDetailModal
@@ -721,57 +829,151 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           text-overflow: ellipsis;
         }
         .tier-block {
-          display: grid;
-          grid-template-columns: auto minmax(0, 1fr);
+          display: flex;
+          flex-wrap: wrap;
           align-items: center;
           gap: 5px 8px;
           margin-top: 3px;
-          max-width: 360px;
+          max-width: 380px;
         }
         .tier-badge {
           display: inline-flex;
           align-items: center;
           gap: 5px;
+          flex: 0 0 auto;
+          max-width: 100%;
           padding: 3px 10px 3px 8px;
           border-radius: var(--r-full);
           border: 1px solid rgba(255, 255, 255, 0.42);
+          font-family: inherit;
           font-size: 0.72rem;
           font-weight: 800;
           letter-spacing: 0.01em;
           white-space: nowrap;
           color: #fff;
+          cursor: pointer;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18),
             inset 0 1px 0 rgba(255, 255, 255, 0.35);
+          transition: transform var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
         }
-        .tier-bronze {
-          background: linear-gradient(135deg, #d08b52, #9a5a24);
+        .tier-badge-text {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
-        .tier-silver {
-          background: linear-gradient(135deg, #eef3f9, #96a3b1);
-          border-color: rgba(255, 255, 255, 0.75);
-          color: #2f3944;
+        .tier-badge:hover {
+          filter: brightness(1.08);
+          transform: translateY(-1px);
         }
-        .tier-gold {
-          background: linear-gradient(135deg, #ffe89c, #dda000);
+        .tier-badge:active {
+          transform: scale(0.97);
+        }
+        .tier-da-boc-xuong {
+          background: linear-gradient(135deg, #e7e1d6, #a99f90);
           border-color: rgba(255, 255, 255, 0.6);
-          color: #5b3c00;
+          color: #42392f;
+          --glow: 220, 210, 190;
         }
-        .tier-diamond {
-          background: linear-gradient(135deg, #a9ecff, #7f8dff);
-          border-color: rgba(255, 255, 255, 0.65);
-          color: #0c2145;
+        .tier-kho-det {
+          background: linear-gradient(135deg, #e8c39d, #b07a4d);
+          border-color: rgba(255, 255, 255, 0.55);
+          color: #3f2611;
+          --glow: 224, 170, 120;
+        }
+        .tier-bim-50kg {
+          background: linear-gradient(135deg, #ffc6d9, #ff8fb1);
+          border-color: rgba(255, 255, 255, 0.6);
+          color: #5e1030;
+          --glow: 255, 160, 195;
+        }
+        .tier-sau-mui {
+          background: linear-gradient(135deg, #ffcf7a, #f08a1e);
+          border-color: rgba(255, 255, 255, 0.55);
+          color: #4a2600;
+          --glow: 255, 175, 70;
+        }
+        .tier-chupy {
+          background: linear-gradient(135deg, #c2a6ff, #7b52ff);
+          border-color: rgba(255, 255, 255, 0.55);
+          color: #fff;
+          --glow: 170, 140, 255;
+        }
+        .tier-mup-rup {
+          background: linear-gradient(135deg, #ff9ae6, #c81f9e);
+          border-color: rgba(255, 255, 255, 0.6);
+          color: #fff;
+          --glow: 255, 120, 215;
+        }
+        .tier-trong-ba {
+          background: linear-gradient(135deg, #8ef0bf, #0f9d63);
+          border-color: rgba(255, 255, 255, 0.55);
+          color: #053a25;
+          --glow: 80, 235, 160;
+        }
+        .tier-dop-vuong {
+          background: linear-gradient(135deg, #ffe9a3, #c08a00 52%, #7a4bff);
+          border-color: rgba(255, 255, 255, 0.6);
+          color: #2a1700;
+          --glow: 255, 205, 90;
+        }
+        /* Aura for the top three tiers: a breathing glow around badge/medal. */
+        .tier-aura {
+          animation: tierAuraPulse 3.4s ease-in-out infinite;
+        }
+        @keyframes tierAuraPulse {
+          0%,
+          100% {
+            box-shadow: 0 0 0 0 rgba(var(--glow, 255, 255, 255), 0),
+              0 0 10px 1px rgba(var(--glow, 255, 255, 255), 0.55),
+              inset 0 1px 0 rgba(255, 255, 255, 0.4);
+          }
+          50% {
+            box-shadow: 0 0 0 3px rgba(var(--glow, 255, 255, 255), 0.3),
+              0 0 20px 7px rgba(var(--glow, 255, 255, 255), 0.6),
+              inset 0 1px 0 rgba(255, 255, 255, 0.4);
+          }
         }
         .tier-hint {
+          flex: 1 1 110px;
           min-width: 0;
           font-size: 0.7rem;
           font-weight: 600;
           color: rgba(255, 255, 255, 0.9);
-          white-space: nowrap;
+          /* Marquee viewport: 100cqw below is this element's width. */
+          container-type: inline-size;
           overflow: hidden;
-          text-overflow: ellipsis;
+        }
+        .tier-hint-text {
+          display: inline-block;
+          white-space: nowrap;
+          will-change: transform;
+          /* Slide to the end of the sentence, come back, repeat.
+             min(0px, …) keeps it still when the text already fits. */
+          animation: tierMarquee 7s ease-in-out infinite;
+        }
+        @keyframes tierMarquee {
+          0%,
+          8% {
+            transform: translateX(0);
+          }
+          46%,
+          54% {
+            transform: translateX(min(0px, calc(-100% + 100cqw)));
+          }
+          92%,
+          100% {
+            transform: translateX(0);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .tier-hint-text {
+            animation: none;
+            transform: none;
+          }
         }
         .tier-track {
-          grid-column: 1 / -1;
+          flex: 1 0 100%;
           height: 5px;
           border-radius: var(--r-full);
           background: rgba(255, 255, 255, 0.28);
@@ -783,17 +985,181 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           border-radius: inherit;
           transition: width 0.5s var(--ease);
         }
-        .tier-fill-bronze {
-          background: linear-gradient(90deg, #e6a877, #c17234);
+        .tier-fill-da-boc-xuong {
+          background: linear-gradient(90deg, #e7e1d6, #a99f90);
         }
-        .tier-fill-silver {
-          background: linear-gradient(90deg, #f4f8fc, #aab6c4);
+        .tier-fill-kho-det {
+          background: linear-gradient(90deg, #e8c39d, #b07a4d);
         }
-        .tier-fill-gold {
-          background: linear-gradient(90deg, #ffeaa8, #f0b400);
+        .tier-fill-bim-50kg {
+          background: linear-gradient(90deg, #ffc6d9, #ff7aa2);
         }
-        .tier-fill-diamond {
-          background: linear-gradient(90deg, #b6f0ff, #8b95ff);
+        .tier-fill-sau-mui {
+          background: linear-gradient(90deg, #ffcf7a, #f08a1e);
+        }
+        .tier-fill-chupy {
+          background: linear-gradient(90deg, #c2a6ff, #7b52ff);
+        }
+        .tier-fill-mup-rup {
+          background: linear-gradient(90deg, #ff9ae6, #c81f9e);
+        }
+        .tier-fill-trong-ba {
+          background: linear-gradient(90deg, #8ef0bf, #0f9d63);
+        }
+        .tier-fill-dop-vuong {
+          background: linear-gradient(90deg, #ffe9a3, #c08a00);
+        }
+        /* ---- Membership tier sheet ---- */
+        .tier-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 120;
+          display: grid;
+          place-items: center;
+          padding: 20px;
+          background: rgba(24, 14, 6, 0.5);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          animation: tierFade 0.2s var(--ease) both;
+        }
+        .tier-sheet {
+          width: min(380px, 100%);
+          max-height: min(78vh, 560px);
+          overflow-y: auto;
+          padding: 18px;
+          border-radius: var(--r-lg);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          box-shadow: var(--shadow-lg);
+          color: var(--text);
+          animation: tierPop 0.24s var(--ease-out) both;
+        }
+        .tier-sheet-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+        .tier-sheet-head h3 {
+          margin: 0;
+          font-size: 1.02rem;
+          font-weight: 800;
+          color: var(--text);
+        }
+        .tier-sheet-close {
+          flex: 0 0 auto;
+          width: 32px;
+          height: 32px;
+          display: grid;
+          place-items: center;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          color: var(--text-soft);
+          cursor: pointer;
+          transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+        }
+        .tier-sheet-close:hover {
+          color: var(--primary-strong);
+          border-color: var(--primary);
+        }
+        .tier-sheet-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .tier-sheet-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 12px;
+          border-radius: var(--r-md);
+          background: var(--surface-2);
+          border: 1px solid transparent;
+        }
+        .tier-sheet-item.is-current {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.14);
+        }
+        .tier-sheet-item.has-aura {
+          box-shadow: 0 0 0 1px rgba(255, 214, 120, 0.22),
+            0 0 16px rgba(255, 122, 217, 0.14);
+        }
+        .tier-sheet-item.has-aura.is-current {
+          box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.16),
+            0 0 0 1px rgba(255, 214, 120, 0.3), 0 0 18px rgba(255, 122, 217, 0.18);
+        }
+        .tier-medal {
+          flex: 0 0 auto;
+          width: 38px;
+          height: 38px;
+          display: grid;
+          place-items: center;
+          border-radius: var(--r-full);
+          color: #fff;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4),
+            0 2px 6px rgba(0, 0, 0, 0.18);
+        }
+        .tier-sheet-body {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .tier-sheet-name {
+          font-size: 0.9rem;
+          font-weight: 800;
+          color: var(--text);
+        }
+        .tier-sheet-req {
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: var(--text-faint);
+        }
+        .tier-sheet-tag {
+          flex: 0 0 auto;
+          padding: 3px 9px;
+          border-radius: var(--r-full);
+          background: var(--grad-primary);
+          color: var(--primary-contrast);
+          font-size: 0.64rem;
+          font-weight: 800;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+        .tier-sheet-check {
+          flex: 0 0 auto;
+          color: var(--primary);
+        }
+        .tier-sheet-foot {
+          margin: 14px 2px 0;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-faint);
+        }
+        @keyframes tierFade {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        @keyframes tierPop {
+          from {
+            opacity: 0;
+            transform: translateY(10px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: none;
+          }
         }
         .upgrade-btn {
           margin-top: 4px;

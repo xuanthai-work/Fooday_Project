@@ -1,24 +1,42 @@
-// Membership tiers, Shopee style.
+// Membership tiers, Shopee style with a local meme twist.
 //
 // The profile already awards reward points for activity (favorites, added
 // dishes and reviews), so the tier is derived from that number instead of
 // storing an extra column in the database. Bump the thresholds here if the
 // point economy changes.
 
-export type MemberTierId = 'bronze' | 'silver' | 'gold' | 'diamond';
+export type MemberTierId =
+  | 'da-boc-xuong'
+  | 'kho-det'
+  | 'bim-50kg'
+  | 'sau-mui'
+  | 'chupy'
+  | 'mup-rup'
+  | 'trong-ba'
+  | 'dop-vuong';
 
 export interface MemberTier {
   id: MemberTierId;
   /** Minimum points needed to reach this tier. */
   min: number;
+  /** Top tiers get an animated glow around the badge and medal. */
+  aura?: boolean;
 }
 
-/** Ordered from the lowest tier to the highest. */
+/**
+ * Ordered from the lowest tier to the highest.
+ * Adding a dish alone is worth 25 points, so the gaps are deliberately wide:
+ * the higher tiers should take real activity, not a couple of uploads.
+ */
 export const MEMBER_TIERS: MemberTier[] = [
-  { id: 'bronze', min: 0 },
-  { id: 'silver', min: 100 },
-  { id: 'gold', min: 300 },
-  { id: 'diamond', min: 700 },
+  { id: 'da-boc-xuong', min: 0 },
+  { id: 'kho-det', min: 500 },
+  { id: 'bim-50kg', min: 1500 },
+  { id: 'sau-mui', min: 3000 },
+  { id: 'chupy', min: 6000 },
+  { id: 'mup-rup', min: 10000, aura: true },
+  { id: 'trong-ba', min: 18000, aura: true },
+  { id: 'dop-vuong', min: 30000, aura: true },
 ];
 
 /** Tier that owns the given amount of points (never null). */
