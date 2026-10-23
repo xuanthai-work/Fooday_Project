@@ -4,17 +4,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   Mail,
-  CalendarDays,
   Star,
   ChevronRight,
   Heart,
   Clock,
   LogOut,
-  Globe,
   Check,
   Camera,
   Loader2,
-  Sparkles,
+  Medal,
+  Settings,
 } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
@@ -27,6 +26,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { LANGUAGES } from '@/i18n/translations';
 import { calculateReviewPoints } from '@/lib/reviewPhotos';
+import { nextTierOf, tierForPoints, tierProgress } from '@/lib/memberTiers';
 import DishDetailModal from './DishDetailModal';
 
 interface ProfileViewProps {
@@ -43,20 +43,19 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const { enabled: funEnabled, toggle: toggleFunEffects } = useFunEffects();
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
-  const [langOpen, setLangOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-  const langAnchorRef = useRef<HTMLDivElement>(null);
+  const settingsAnchorRef = useRef<HTMLDivElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-  const currentLang = LANGUAGES.find((item) => item.code === lang) ?? LANGUAGES[0];
 
   useEffect(() => {
-    if (!langOpen) return;
+    if (!settingsOpen) return;
     const onPointer = (event: MouseEvent) => {
-      if (!langAnchorRef.current?.contains(event.target as Node)) setLangOpen(false);
+      if (!settingsAnchorRef.current?.contains(event.target as Node)) setSettingsOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setLangOpen(false);
+      if (event.key === 'Escape') setSettingsOpen(false);
     };
     document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
@@ -64,7 +63,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
       document.removeEventListener('mousedown', onPointer);
       document.removeEventListener('keydown', onKey);
     };
-  }, [langOpen]);
+  }, [settingsOpen]);
 
   const favoriteItems = [...favorites]
     .map((id) => byId[id])
@@ -81,9 +80,11 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
     0,
   );
   const points = favoriteItems.length * 5 + dishesAdded * 25 + reviewPoints;
-  const memberSince = user?.created_at
-    ? new Date(user.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
-    : null;
+  // Shopee-style membership tier derived from the reward points above.
+  const tier = tierForPoints(points);
+  const nextTier = nextTierOf(tier);
+  const progress = Math.round(tierProgress(points) * 100);
+  const pointsToNext = nextTier ? Math.max(0, nextTier.min - points) : 0;
 
   const handleUpgrade = async () => {
     // To upgrade, they just sign out of guest mode to go back to AuthScreen
@@ -135,54 +136,66 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           <button className="banner-btn" aria-label={t.profile.signOut} onClick={signOut}>
             <LogOut size={19} />
           </button>
-          <div className="banner-actions" ref={langAnchorRef}>
+          <div className="banner-actions" ref={settingsAnchorRef}>
             <button
               type="button"
-              className={`lang-trigger ${langOpen ? 'open' : ''}`}
-              aria-label={`${t.profile.languageLabel}: ${currentLang.label}`}
+              className={`lang-trigger ${settingsOpen ? 'open' : ''}`}
+              aria-label={t.profile.settings}
               aria-haspopup="dialog"
-              aria-expanded={langOpen}
-              title={t.profile.languageLabel}
-              onClick={() => setLangOpen((open) => !open)}
+              aria-expanded={settingsOpen}
+              title={t.profile.settings}
+              onClick={() => setSettingsOpen((open) => !open)}
             >
-              <Globe size={19} />
-            </button>
-            <button
-              type="button"
-              className={`lang-trigger ${funEnabled ? 'is-on' : ''}`}
-              aria-label={t.profile.funEffects}
-              aria-pressed={funEnabled}
-              title={t.profile.funEffects}
-              onClick={toggleFunEffects}
-            >
-              <Sparkles size={19} />
+              <Settings size={19} />
             </button>
             <ThemeToggle variant="onPrimary" />
-            {langOpen && (
-              <div className="lang-pop" role="dialog" aria-label={t.profile.languageLabel}>
-                <p className="lang-pop-title">{t.profile.languageLabel}</p>
-                <div className="lang-options" role="group" aria-label={t.profile.languageLabel}>
-                  {LANGUAGES.map(({ code, label, flag }) => {
-                    const active = lang === code;
-                    return (
-                      <button
-                        key={code}
-                        type="button"
-                        className={`lang-option ${active ? 'active' : ''}`}
-                        aria-pressed={active}
-                        onClick={() => {
-                          setLang(code);
-                          setLangOpen(false);
-                        }}
-                      >
-                        <span className="lang-flag" aria-hidden="true">
-                          {flag}
-                        </span>
-                        <span className="lang-option-label">{label}</span>
-                        {active && <Check size={16} strokeWidth={2.6} />}
-                      </button>
-                    );
-                  })}
+            {settingsOpen && (
+              <div
+                className="lang-pop settings-pop"
+                role="dialog"
+                aria-label={t.profile.settings}
+              >
+                <p className="lang-pop-title">{t.profile.settings}</p>
+
+                <div className="settings-group">
+                  <span className="settings-caption">{t.profile.languageLabel}</span>
+                  <div className="lang-options" role="group" aria-label={t.profile.languageLabel}>
+                    {LANGUAGES.map(({ code, label, flag }) => {
+                      const active = lang === code;
+                      return (
+                        <button
+                          key={code}
+                          type="button"
+                          className={`lang-option ${active ? 'active' : ''}`}
+                          aria-pressed={active}
+                          onClick={() => setLang(code)}
+                        >
+                          <span className="lang-flag" aria-hidden="true">
+                            {flag}
+                          </span>
+                          <span className="lang-option-label">{label}</span>
+                          {active && <Check size={16} strokeWidth={2.6} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <div className="settings-row">
+                    <span className="settings-label">{t.profile.funEffects}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={funEnabled}
+                      aria-label={t.profile.funEffects}
+                      className={`settings-switch ${funEnabled ? 'on' : ''}`}
+                      onClick={toggleFunEffects}
+                    >
+                      <span className="settings-knob" />
+                    </button>
+                  </div>
+                  <p className="settings-hint">{t.profile.funEffectsHint}</p>
                 </div>
               </div>
             )}
@@ -235,10 +248,29 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                 {t.profile.upgrade}
               </button>
             ) : (
-              <span className="detail">
-                <CalendarDays size={13} />{' '}
-                {memberSince ? t.profile.memberSince(memberSince) : t.profile.foodayMember}
-              </span>
+              <div className="tier-block">
+                <span className={`tier-badge tier-${tier.id}`}>
+                  <Medal size={13} /> {t.profile.tierLabel(t.profile.tiers[tier.id])}
+                </span>
+                <span className="tier-hint">
+                  {nextTier
+                    ? t.profile.tierNext(pointsToNext, t.profile.tiers[nextTier.id])
+                    : t.profile.tierMax}
+                </span>
+                <span
+                  className="tier-track"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
+                  aria-label={t.profile.tierLabel(t.profile.tiers[tier.id])}
+                >
+                  <span
+                    className={`tier-fill tier-fill-${tier.id}`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </span>
+              </div>
             )}
             {avatarError && <span className="avatar-error">{avatarError}</span>}
           </div>
@@ -435,22 +467,6 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           border-color: rgba(255, 255, 255, 0.5);
           transform: translateY(-2px);
         }
-        .lang-trigger.is-on {
-          background: rgba(255, 255, 255, 0.34);
-          border-color: rgba(255, 255, 255, 0.7);
-          color: #fff;
-        }
-        .lang-trigger.is-on::after {
-          content: '';
-          position: absolute;
-          top: 6px;
-          right: 6px;
-          width: 6px;
-          height: 6px;
-          border-radius: var(--r-full);
-          background: #fff;
-          box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.9);
-        }
         .lang-trigger:active {
           transform: scale(0.94);
         }
@@ -466,6 +482,77 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           box-shadow: var(--shadow-lg);
           color: var(--text);
           animation: fadeInUp 0.22s var(--ease-out);
+        }
+        .settings-pop {
+          width: 252px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .settings-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .settings-caption {
+          margin: 0 2px;
+          font-size: 0.7rem;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          color: var(--text-faint);
+        }
+        .settings-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .settings-label {
+          font-size: 0.8125rem;
+          font-weight: 700;
+          line-height: 1.25;
+          color: var(--text);
+        }
+        .settings-hint {
+          margin: 0 2px;
+          font-size: 0.72rem;
+          line-height: 1.35;
+          color: var(--text-faint);
+        }
+        .settings-switch {
+          position: relative;
+          flex: 0 0 auto;
+          width: 46px;
+          height: 28px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .settings-switch.on {
+          background: var(--grad-primary);
+          border-color: transparent;
+        }
+        .settings-switch:hover {
+          border-color: var(--primary);
+        }
+        .settings-knob {
+          position: absolute;
+          top: 50%;
+          left: 3px;
+          width: 20px;
+          height: 20px;
+          margin-top: -10px;
+          border-radius: var(--r-full);
+          background: #fff;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+          transition: transform var(--dur-fast) var(--ease);
+        }
+        .settings-switch.on .settings-knob {
+          transform: translateX(18px);
         }
         .lang-pop-title {
           margin: 0 4px 8px;
@@ -632,6 +719,81 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        .tier-block {
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr);
+          align-items: center;
+          gap: 5px 8px;
+          margin-top: 3px;
+          max-width: 360px;
+        }
+        .tier-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 3px 10px 3px 8px;
+          border-radius: var(--r-full);
+          border: 1px solid rgba(255, 255, 255, 0.42);
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.01em;
+          white-space: nowrap;
+          color: #fff;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        }
+        .tier-bronze {
+          background: linear-gradient(135deg, #d08b52, #9a5a24);
+        }
+        .tier-silver {
+          background: linear-gradient(135deg, #eef3f9, #96a3b1);
+          border-color: rgba(255, 255, 255, 0.75);
+          color: #2f3944;
+        }
+        .tier-gold {
+          background: linear-gradient(135deg, #ffe89c, #dda000);
+          border-color: rgba(255, 255, 255, 0.6);
+          color: #5b3c00;
+        }
+        .tier-diamond {
+          background: linear-gradient(135deg, #a9ecff, #7f8dff);
+          border-color: rgba(255, 255, 255, 0.65);
+          color: #0c2145;
+        }
+        .tier-hint {
+          min-width: 0;
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.9);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tier-track {
+          grid-column: 1 / -1;
+          height: 5px;
+          border-radius: var(--r-full);
+          background: rgba(255, 255, 255, 0.28);
+          overflow: hidden;
+        }
+        .tier-fill {
+          display: block;
+          height: 100%;
+          border-radius: inherit;
+          transition: width 0.5s var(--ease);
+        }
+        .tier-fill-bronze {
+          background: linear-gradient(90deg, #e6a877, #c17234);
+        }
+        .tier-fill-silver {
+          background: linear-gradient(90deg, #f4f8fc, #aab6c4);
+        }
+        .tier-fill-gold {
+          background: linear-gradient(90deg, #ffeaa8, #f0b400);
+        }
+        .tier-fill-diamond {
+          background: linear-gradient(90deg, #b6f0ff, #8b95ff);
         }
         .upgrade-btn {
           margin-top: 4px;
