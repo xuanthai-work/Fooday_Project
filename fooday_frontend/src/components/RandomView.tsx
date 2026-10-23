@@ -2,13 +2,30 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { Dices, Star, Heart, Sparkles, RotateCw, Eye, Loader2 } from 'lucide-react';
+import {
+  ChevronRight,
+  Crosshair,
+  Dices,
+  Heart,
+  Loader2,
+  RotateCw,
+  Sparkles,
+  Star,
+  Eye,
+} from 'lucide-react';
 import { useFoods, FOOD_CATEGORIES, FoodCategory, Food, foodHasCategory } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useEmojiRain } from '@/hooks/useEmojiRain';
 import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
+import {
+  findNearestBranch,
+  formatDistance,
+  getAllBranches,
+  resolveBranchCoords,
+  useUserLocation,
+} from '@/lib/geo';
 import DishDetailModal from './DishDetailModal';
 import EmojiRain from './EmojiRain';
 
@@ -21,9 +38,9 @@ type Rarity = 'blue' | 'purple' | 'pink' | 'gold';
 const REEL_SIZE = 45;
 const SPIN_MS = 5200;
 
-function buildReel(pool: Food[], size = REEL_SIZE): Food[] {
+function buildReel<T>(pool: T[], size = REEL_SIZE): T[] {
   if (pool.length === 0) return [];
-  const out: Food[] = [];
+  const out: T[] = [];
   while (out.length < size) {
     out.push(pool[Math.floor(Math.random() * pool.length)]);
   }
@@ -42,17 +59,6 @@ function foodCategoriesOf(item: Food): FoodCategory[] {
   const list = item.categories ?? [];
   return list.length > 0 ? list : [item.category];
 }
-
-type PriceTier = 'all' | 'under30' | '30' | '50' | '199' | '299';
-
-const PRICE_TIERS: { id: PriceTier; labelKey: 'priceAll' | 'priceUnder30' | 'price30' | 'price50' | 'price199' | 'price299' }[] = [
-  { id: 'all', labelKey: 'priceAll' },
-  { id: 'under30', labelKey: 'priceUnder30' },
-  { id: '30', labelKey: 'price30' },
-  { id: '50', labelKey: 'price50' },
-  { id: '199', labelKey: 'price199' },
-  { id: '299', labelKey: 'price299' },
-];
 
 const normalize = (value: string) =>
   value
@@ -99,6 +105,17 @@ function formatFoodPrice(food: Food): string {
   return `${estimated ? '~' : ''}${formatPrice(value)}`;
 }
 
+type PriceTier = 'all' | 'under30' | '30' | '50' | '199' | '299';
+
+const PRICE_TIERS: { id: PriceTier; labelKey: 'priceAll' | 'priceUnder30' | 'price30' | 'price50' | 'price199' | 'price299' }[] = [
+  { id: 'all', labelKey: 'priceAll' },
+  { id: 'under30', labelKey: 'priceUnder30' },
+  { id: '30', labelKey: 'price30' },
+  { id: '50', labelKey: 'price50' },
+  { id: '199', labelKey: 'price199' },
+  { id: '299', labelKey: 'price299' },
+];
+
 function inPriceTier(price: number, tier: PriceTier): boolean {
   if (tier === 'all') return true;
   if (tier === 'under30') return price < 30000;
@@ -108,34 +125,95 @@ function inPriceTier(price: number, tier: PriceTier): boolean {
   return price > 299000;
 }
 
+/**
+ * One dish name shared by every restaurant serving it. The roulette spins on
+ * dishes (not on individual places) so the result is "what to eat" and the
+ * restaurants come afterwards.
+ */
+interface DishGroup {
+  key: string;
+  name: string;
+  image_url: string;
+  categories: FoodCategory[];
+  places: Food[];
+  /** Best rating among the places serving it. */
+  rating: number;
+  minPrice: number;
+  maxPrice: number;
+  /** True when no place of the group has a real price yet. */
+  estimated: boolean;
+}
+
+function buildDishGroups(pool: Food[]): DishGroup[] {
+  const byName = new Map<string, Food[]>();
+  for (const food of pool) {
+    const key = normalize(food.name).trim();
+    if (!key) continue;
+    const list = byName.get(key);
+    if (list) list.push(food);
+    else byName.set(key, [food]);
+  }
+
+  const groups: DishGroup[] = [];
+  for (const [key, places] of byName) {
+    const real = places
+      .map((place) => place.price)
+      .filter((value): value is number => typeof value === 'number' && value > 0);
+    const values = real.length > 0 ? real : places.map((place) => priceOf(place).value);
+    const best = places.reduce((acc, place) => Math.max(acc, place.rating), 0);
+    groups.push({
+      key,
+      name: places[0].name,
+      image_url: places[0].image_url,
+      categories: foodCategoriesOf(places[0]),
+      places,
+      rating: best,
+      minPrice: Math.min(...values),
+      maxPrice: Math.max(...values),
+      estimated: real.length === 0,
+    });
+  }
+  return groups;
+}
+
+/** `40k` for a single price, `15k – 25k` for a range, `~` when estimated. */
+function formatGroupPrice(group: DishGroup): string {
+  const min = formatPrice(group.minPrice);
+  const max = formatPrice(group.maxPrice);
+  const range = min === max ? min : `${min} – ${max}`;
+  return `${group.estimated ? '~' : ''}${range}`;
+}
+
 export default function RandomView({ onNavigateToChat }: RandomViewProps) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const { foods } = useFoods();
   const { ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
   const { bursts, trigger: triggerRain } = useEmojiRain();
   const { enabled: funEnabled } = useFunEffects();
+  const { coords } = useUserLocation();
   const [category, setCategory] = useState<FoodCategory>('Foods');
   const [priceTier, setPriceTier] = useState<PriceTier>('all');
-  const [reel, setReel] = useState<Food[]>([]);
+  const [reel, setReel] = useState<DishGroup[]>([]);
   const [spinning, setSpinning] = useState(false);
-  const [result, setResult] = useState<Food | null>(null);
+  const [result, setResult] = useState<DishGroup | null>(null);
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
   const [offset, setOffset] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [placesExpanded, setPlacesExpanded] = useState(false);
+  // Bumped whenever a shortened Maps link is expanded into real coordinates,
+  // so the distance computation runs again with the fresh data.
+  const [coordsRevision, setCoordsRevision] = useState(0);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
 
+  // Every dish of the category, once per unique dish name.
   const pool = useMemo(
-    () =>
-      foods.filter(
-        (f) =>
-          foodHasCategory(f, category) && inPriceTier(priceOf(f).value, priceTier),
-      ),
-    [foods, category, priceTier],
+    () => buildDishGroups(foods.filter((f) => foodHasCategory(f, category))),
+    [foods, category],
   );
 
   const initialReel = useMemo(() => buildReel(pool), [pool]);
@@ -190,6 +268,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
 
     setResult(null);
     setSelectedDish(null);
+    setPlacesExpanded(false);
     setReel(nextReel);
     setOffset(0);
     setIsTransitioning(false);
@@ -212,13 +291,14 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
       setSpinning(false);
       setResult(winner);
       // Celebrate the winning pick with a Messenger-style emoji rain.
-      if (funEnabled) triggerRain([winner.category], 'full');
+      if (funEnabled) triggerRain(winner.categories, 'full');
     }, 50 + SPIN_MS);
   };
 
   const resetSpin = () => {
     setResult(null);
     setSelectedDish(null);
+    setPlacesExpanded(false);
     setReel([]);
     setOffset(0);
     setIsTransitioning(false);
@@ -230,13 +310,75 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     resetSpin();
   };
 
+  // The price only filters the restaurants of the dish already revealed, so
+  // picking a range never re-spins.
   const selectPrice = (tier: PriceTier) => {
     if (spinning) return;
     setPriceTier(tier);
-    resetSpin();
+    setPlacesExpanded(false);
   };
 
-  const isFav = result ? favorites.has(result.id) : false;
+  const winnerBranches = useMemo(
+    () =>
+      result
+        ? result.places.flatMap((place) => getAllBranches(place, t.branches.mainBranch))
+        : [],
+    [result, t.branches.mainBranch],
+  );
+
+  // The shortened Google Maps links hide their coordinates: expand them in the
+  // background so the closest place can be picked automatically.
+  useEffect(() => {
+    if (!coords || winnerBranches.length === 0) return;
+    let cancelled = false;
+    void resolveBranchCoords(winnerBranches).then((resolved) => {
+      if (!cancelled && resolved) setCoordsRevision((revision) => revision + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [winnerBranches, coords]);
+
+  // Nearest first when the GPS position is known, best rated otherwise.
+  const rankedPlaces = useMemo(() => {
+    if (!result) return [];
+    void coordsRevision;
+    return result.places
+      .filter((place) => inPriceTier(priceOf(place).value, priceTier))
+      .map((place) => {
+        const nearest = findNearestBranch(
+          getAllBranches(place, t.branches.mainBranch),
+          coords,
+        );
+        return {
+          food: place,
+          distanceKm: nearest?.distanceKm ?? null,
+          rating: ratingOf(place.id, place.rating),
+        };
+      })
+      .sort((a, b) => {
+        if (a.distanceKm !== null && b.distanceKm !== null) {
+          return a.distanceKm - b.distanceKm;
+        }
+        if (a.distanceKm !== null) return -1;
+        if (b.distanceKm !== null) return 1;
+        return b.rating - a.rating;
+      });
+  }, [result, priceTier, coords, coordsRevision, t.branches.mainBranch, ratingOf]);
+
+  const visiblePlaces = placesExpanded ? rankedPlaces : rankedPlaces.slice(0, 3);
+  const nearestPlace = rankedPlaces[0] ?? null;
+  const winnerRating = useMemo(
+    () =>
+      result
+        ? Math.max(...result.places.map((place) => ratingOf(place.id, place.rating)))
+        : 0,
+    [result, ratingOf],
+  );
+  const favoriteTarget = nearestPlace?.food ?? result?.places[0] ?? null;
+  const isFav = favoriteTarget ? favorites.has(favoriteTarget.id) : false;
+  const askRestaurant =
+    nearestPlace?.food.restaurant ?? result?.places[0]?.restaurant ?? '';
 
   return (
     <div className="random animate-fade-in">
@@ -261,23 +403,6 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         ))}
       </div>
 
-      <div className="price-block">
-        <span className="price-label">{t.random.priceLabel}</span>
-        <div className="rnd-chips price-chips" role="tablist" aria-label={t.random.priceLabel}>
-          {PRICE_TIERS.map((tier) => (
-            <button
-              key={tier.id}
-              className={`chip price-chip ${priceTier === tier.id ? 'active' : ''}`}
-              onClick={() => selectPrice(tier.id)}
-              disabled={spinning}
-              aria-pressed={priceTier === tier.id}
-            >
-              {t.random[tier.labelKey]}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="roulette-box" ref={containerRef} aria-live="polite">
         {track.length > 0 ? (
           <div
@@ -289,12 +414,12 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                 : 'none',
             }}
           >
-            {track.map((item, i) => (
-              <div key={`${item.id}-${i}`} className={`roulette-card r-${rarityOf(ratingOf(item.id, item.rating))}`}>
+            {track.map((group, i) => (
+              <div key={`${group.key}-${i}`} className={`roulette-card r-${rarityOf(group.rating)}`}>
                 <div className="rc-media">
                   <Image
-                    src={item.image_url}
-                    alt={item.name}
+                    src={group.image_url}
+                    alt={group.name}
                     fill
                     sizes="170px"
                     loading="eager"
@@ -302,20 +427,15 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                     style={{ objectFit: 'cover' }}
                   />
                   <span className="rc-cat">
-                    {foodCategoriesOf(item)
-                      .map((c) => t.home.categories[c])
-                      .join(' · ')}
+                    {group.categories.map((c) => t.home.categories[c]).join(' · ')}
                   </span>
-                  <span
-                    className="rc-price"
-                    title={priceOf(item).estimated ? t.random.priceEstimated : undefined}
-                  >
-                    {formatFoodPrice(item)}
+                  <span className="rc-price" title={group.estimated ? t.random.priceEstimated : undefined}>
+                    {formatGroupPrice(group)}
                   </span>
                 </div>
                 <div className="rc-body">
-                  <p className="rc-name">{item.name}</p>
-                  <span className="rc-place">{item.restaurant}</span>
+                  <p className="rc-name">{group.name}</p>
+                  <span className="rc-place">{t.random.placesCount(group.places.length)}</span>
                 </div>
               </div>
             ))}
@@ -344,35 +464,127 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             </div>
             <div className="winner-info">
               <h2 className="winner-name">{result.name}</h2>
-              <p className="winner-place">{result.restaurant}</p>
+              <p className="winner-place">{t.random.placesCount(result.places.length)}</p>
               <span className="winner-rating">
                 <Star size={14} fill="var(--star)" color="var(--star)" />
-                {ratingOf(result.id, result.rating).toFixed(1)}
+                {winnerRating.toFixed(1)}
               </span>
               <span
                 className="winner-price"
-                title={priceOf(result).estimated ? t.random.priceEstimated : undefined}
+                title={result.estimated ? t.random.priceEstimated : undefined}
               >
-                {formatFoodPrice(result)}
+                {formatGroupPrice(result)}
               </span>
             </div>
           </div>
 
+          <div className="price-block result-price">
+            <span className="price-label">{t.random.priceLabel}</span>
+            <div className="rnd-chips price-chips" role="tablist" aria-label={t.random.priceLabel}>
+              {PRICE_TIERS.map((tier) => (
+                <button
+                  key={tier.id}
+                  className={`chip price-chip ${priceTier === tier.id ? 'active' : ''}`}
+                  onClick={() => selectPrice(tier.id)}
+                  disabled={spinning}
+                  aria-pressed={priceTier === tier.id}
+                >
+                  {t.random[tier.labelKey]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="place-list">
+            <div className="place-list-head">
+              <span>{t.random.nearestTitle}</span>
+              {!coords && (
+                <span className="place-hint">
+                  <Crosshair size={12} /> {t.random.enableLocation}
+                </span>
+              )}
+            </div>
+
+            {rankedPlaces.length === 0 ? (
+              <div className="places-empty">
+                <p>{t.random.noPriceMatch}</p>
+                <div className="places-empty-actions">
+                  <button className="mini-act" onClick={() => selectPrice('all')}>
+                    {t.random.showAllPrices}
+                  </button>
+                  <button className="mini-act" onClick={spinCase}>
+                    {t.random.changeDish}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <ul className="places">
+                  {visiblePlaces.map(({ food: place, distanceKm, rating }) => (
+                    <li key={place.id}>
+                      <button className="place-row" onClick={() => setSelectedDish(place)}>
+                        <span className="place-thumb">
+                          <Image
+                            src={place.image_url}
+                            alt={place.restaurant}
+                            fill
+                            sizes="56px"
+                            className="place-img"
+                            style={{ objectFit: 'cover' }}
+                          />
+                        </span>
+                        <span className="place-main">
+                          <span className="place-name">{place.restaurant}</span>
+                          <span className="place-meta">
+                            <Star size={12} fill="var(--star)" color="var(--star)" />
+                            {rating.toFixed(1)}
+                            {distanceKm !== null && (
+                              <span className="place-distance">
+                                · {formatDistance(distanceKm, lang)}
+                              </span>
+                            )}
+                            <span className="place-price">{formatFoodPrice(place)}</span>
+                          </span>
+                        </span>
+                        <ChevronRight size={16} className="place-chev" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {rankedPlaces.length > 3 && (
+                  <button
+                    className="more-places"
+                    onClick={() => setPlacesExpanded((value) => !value)}
+                  >
+                    {placesExpanded
+                      ? t.random.showLessPlaces
+                      : t.random.morePlaces(rankedPlaces.length - 3)}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="rnd-actions">
-            <button className="act" onClick={() => setSelectedDish(result)}>
-              <Eye size={16} /> {t.random.viewDetail}
+            <button
+              className="act"
+              onClick={() => {
+                const target = nearestPlace?.food ?? result.places[0];
+                if (target) setSelectedDish(target);
+              }}
+            >
+              <Eye size={16} /> {t.random.viewNearest}
             </button>
             <button
               className="act"
-              onClick={() =>
-                onNavigateToChat(t.random.askAbout(result.name, result.restaurant))
-              }
+              onClick={() => onNavigateToChat(t.random.askAbout(result.name, askRestaurant))}
             >
               <Sparkles size={16} /> {t.random.askAi}
             </button>
             <button
               className={`act ${isFav ? 'is-fav' : ''}`}
-              onClick={() => toggleFavorite(result.id)}
+              onClick={() => favoriteTarget && toggleFavorite(favoriteTarget.id)}
+              disabled={!favoriteTarget}
             >
               <Heart size={16} fill={isFav ? 'var(--heart)' : 'none'} />
               {isFav ? t.random.saved : t.random.favorite}
@@ -454,8 +666,13 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           z-index: 2;
           width: 100%;
           max-width: 100%;
-          margin: -8px 0 18px;
           background: var(--bg);
+        }
+        .result-price {
+          margin: 16px 0 0;
+        }
+        .result-price .price-label {
+          text-align: left;
         }
         .price-label {
           display: block;
@@ -714,6 +931,8 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         }
         .winner-congrats,
         .winner-card,
+        .result-price,
+        .place-list,
         .rnd-actions {
           position: relative;
           z-index: 1;
@@ -790,6 +1009,166 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           font-weight: 800;
           box-shadow: var(--shadow-primary);
         }
+        .place-list {
+          width: 100%;
+          margin-top: 14px;
+          padding: 12px;
+          border-radius: var(--r-lg);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          box-shadow: var(--shadow-sm);
+        }
+        .place-list-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 8px;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+          color: var(--text-faint);
+        }
+        .place-hint {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 10.5px;
+          font-weight: 600;
+          letter-spacing: 0;
+          text-transform: none;
+          color: var(--primary-strong);
+        }
+        .places {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .place-row {
+          position: relative;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 30px 8px 8px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          text-align: left;
+          cursor: pointer;
+          transition: border-color var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .place-row:hover {
+          transform: translateY(-1px);
+          border-color: var(--primary);
+          box-shadow: var(--shadow-sm);
+        }
+        .place-thumb {
+          position: relative;
+          flex: 0 0 auto;
+          width: 46px;
+          height: 46px;
+          border-radius: 10px;
+          overflow: hidden;
+          background: var(--surface);
+        }
+        .place-img {
+          object-fit: cover;
+        }
+        .place-main {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .place-name {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--text);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .place-meta {
+          display: inline-flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 4px;
+          font-size: 11.5px;
+          color: var(--text-soft);
+        }
+        .place-distance {
+          color: var(--text-soft);
+        }
+        .place-price {
+          margin-left: 2px;
+          padding: 1px 7px;
+          border-radius: var(--r-full);
+          background: rgba(234, 179, 8, 0.16);
+          color: var(--primary-strong);
+          font-size: 11px;
+          font-weight: 800;
+        }
+        .place-chev {
+          position: absolute;
+          right: 9px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--text-faint);
+        }
+        .places-empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 4px 6px;
+          text-align: center;
+          font-size: 12.5px;
+          color: var(--text-soft);
+        }
+        .places-empty-actions {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 8px;
+        }
+        .mini-act {
+          padding: 8px 12px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--primary-strong);
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: transform var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease);
+        }
+        .mini-act:hover {
+          transform: translateY(-1px);
+          border-color: var(--primary);
+        }
+        .more-places {
+          width: 100%;
+          margin-top: 8px;
+          padding: 8px;
+          border-radius: var(--r-full);
+          border: 1px dashed var(--border-strong);
+          background: transparent;
+          color: var(--text-soft);
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .more-places:hover {
+          border-color: var(--primary);
+          color: var(--primary-strong);
+        }
         .rnd-actions {
           display: flex;
           gap: 8px;
@@ -816,10 +1195,14 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
             transform var(--dur-fast) var(--ease);
         }
-        .act:hover {
+        .act:hover:not(:disabled) {
           transform: translateY(-2px);
           border-color: var(--primary);
           color: var(--primary-strong);
+        }
+        .act:disabled {
+          opacity: 0.6;
+          cursor: default;
         }
         .act.is-fav {
           color: var(--heart);
@@ -874,6 +1257,11 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             flex: 1 1 calc(50% - 4px);
             font-size: 12px;
           }
+          .place-list-head {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 4px;
+          }
         }
         @keyframes spin {
           to {
@@ -888,6 +1276,16 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           to {
             opacity: 1;
             transform: translateY(0);
+          }
+        }
+        @keyframes popIn {
+          from {
+            opacity: 0;
+            transform: scale(0.94);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
           }
         }
       `}</style>
