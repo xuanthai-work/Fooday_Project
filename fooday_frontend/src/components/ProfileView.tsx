@@ -530,7 +530,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           justify-content: space-between;
           margin-bottom: 18px;
           position: relative;
-          z-index: 5;
+          z-index: 25;
         }
         .banner-btn {
           width: 44px;
@@ -553,7 +553,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           display: flex;
           align-items: center;
           gap: 8px;
-          z-index: 3;
+          z-index: 25;
         }
         .lang-trigger {
           position: relative;
@@ -590,6 +590,17 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           box-shadow: var(--shadow-lg);
           color: var(--text);
           animation: fadeInUp 0.22s var(--ease-out);
+          max-height: min(380px, calc(100dvh - 120px));
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .lang-pop::-webkit-scrollbar {
+          width: 4px;
+        }
+        .lang-pop::-webkit-scrollbar-thumb {
+          background: var(--border-strong);
+          border-radius: var(--r-full);
         }
         .settings-pop {
           width: 252px;

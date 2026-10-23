@@ -10,6 +10,7 @@ Tất cả các task sau khi Developer Agent hoàn thành và vượt qua toàn 
 
 | Task ID / Tên File | Tiêu đề | Ngày hoàn thành | Trạng thái QA |
 | :--- | :--- | :--- | :--- |
+| [2026-10-23-fix-settings-popover-clipping-and-scrolling.md](tasks/2026-10-23-fix-settings-popover-clipping-and-scrolling.md) | Fix Settings Popover Clipping and Scrolling in ProfileView | 2026-10-23 | ✅ PASS |
 | [2026-10-23-form-layout-reorganization-and-maps-address-grouping.md](tasks/2026-10-23-form-layout-reorganization-and-maps-address-grouping.md) | Form Layout Reorganization, Maps/Address Grouping, and Compact Branch Button | 2026-10-23 | ✅ PASS |
 | [2026-10-23-compact-plus-button-for-multi-dish-input.md](tasks/2026-10-23-compact-plus-button-for-multi-dish-input.md) | Compact Plus Button for Multi-Dish Input | 2026-10-23 | ✅ PASS |
 | [2026-10-23-redesign-categories-tiktok-hashtags-and-compact-layout.md](tasks/2026-10-23-redesign-categories-tiktok-hashtags-and-compact-layout.md) | Redesign Categories, TikTok-Style Hashtags, and Streamlined Form Layout | 2026-10-23 | ✅ PASS |
