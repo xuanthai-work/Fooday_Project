@@ -61,7 +61,7 @@ const normalize = (value: string) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd');
 
-/** Catalog has no price column, so the case filter uses a type-based estimate. */
+/** Fallback price for dishes whose `price` column is still empty. */
 function estimatePrice(food: Food): number {
   const text = normalize(`${food.name} ${food.restaurant} ${food.review_note ?? ''} ${food.tag ?? ''}`);
   const noted = text.match(/(\d{2,3})\s*(k|nghin|ngan|\/ng)\b/);
@@ -82,6 +82,21 @@ function formatPrice(price: number): string {
     return `${k % 1 === 0 ? k : k.toFixed(0)}k`;
   }
   return `${price}`;
+}
+
+/** The real catalog price when known, otherwise the text-based estimate. */
+function priceOf(food: Food): { value: number; estimated: boolean } {
+  const value = food.price;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return { value, estimated: false };
+  }
+  return { value: estimatePrice(food), estimated: true };
+}
+
+/** `~40k` = estimated (the place has no price yet), `40k` = real price. */
+function formatFoodPrice(food: Food): string {
+  const { value, estimated } = priceOf(food);
+  return `${estimated ? '~' : ''}${formatPrice(value)}`;
 }
 
 function inPriceTier(price: number, tier: PriceTier): boolean {
@@ -118,7 +133,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     () =>
       foods.filter(
         (f) =>
-          foodHasCategory(f, category) && inPriceTier(estimatePrice(f), priceTier),
+          foodHasCategory(f, category) && inPriceTier(priceOf(f).value, priceTier),
       ),
     [foods, category, priceTier],
   );
@@ -291,7 +306,12 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                       .map((c) => t.home.categories[c])
                       .join(' · ')}
                   </span>
-                  <span className="rc-price">{formatPrice(estimatePrice(item))}</span>
+                  <span
+                    className="rc-price"
+                    title={priceOf(item).estimated ? t.random.priceEstimated : undefined}
+                  >
+                    {formatFoodPrice(item)}
+                  </span>
                 </div>
                 <div className="rc-body">
                   <p className="rc-name">{item.name}</p>
@@ -329,7 +349,12 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                 <Star size={14} fill="var(--star)" color="var(--star)" />
                 {ratingOf(result.id, result.rating).toFixed(1)}
               </span>
-              <span className="winner-price">{formatPrice(estimatePrice(result))}</span>
+              <span
+                className="winner-price"
+                title={priceOf(result).estimated ? t.random.priceEstimated : undefined}
+              >
+                {formatFoodPrice(result)}
+              </span>
             </div>
           </div>
 

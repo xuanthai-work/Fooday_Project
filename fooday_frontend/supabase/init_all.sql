@@ -13,6 +13,7 @@ create table if not exists public.foods (
   categories   jsonb default '[]'::jsonb,
   restaurant   text not null,
   rating       numeric(2,1) not null default 4.5,
+  price        integer,
   image_url    text not null,
   images       text[] default '{}',
   tag          text,
@@ -32,6 +33,7 @@ alter table public.foods
   add column if not exists opening_time text,
   add column if not exists review_note  text,
   add column if not exists categories   jsonb default '[]'::jsonb,
+  add column if not exists price        integer,
   add column if not exists branches     jsonb default '[]'::jsonb,
   add column if not exists contributors jsonb default '[]'::jsonb,
   add column if not exists created_by   uuid references auth.users (id) on delete set null default auth.uid();

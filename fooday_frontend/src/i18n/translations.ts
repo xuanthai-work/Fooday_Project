@@ -98,6 +98,7 @@ const vi = {
     price50: '50–199k',
     price199: '199–299k',
     price299: '299k+',
+    priceEstimated: 'Giá ước lượng (quán chưa cập nhật giá)',
     askAbout: (dish: string, restaurant: string) =>
       `Cho mình biết thêm về ${dish} ở ${restaurant}.`,
   },
@@ -423,6 +424,7 @@ const en: Translation = {
     price50: '50–199k',
     price199: '199–299k',
     price299: '299k+',
+    priceEstimated: 'Estimated price (no price added yet)',
     askAbout: (dish: string, restaurant: string) =>
       `Tell me more about ${dish} from ${restaurant}.`,
   },

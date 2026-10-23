@@ -52,6 +52,8 @@ export interface Food {
   categories?: FoodCategory[] | null;
   restaurant: string;
   rating: number;
+  /** Reference price of the dish at this restaurant, in VND. Null = unknown. */
+  price?: number | null;
   image_url: string;
   images?: string[] | null;
   tag: string | null;
@@ -67,19 +69,23 @@ export interface Food {
 }
 
 const COLUMNS =
+  'id, slug, name, dishes, category, categories, restaurant, rating, price, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches, contributors';
+
+/** Same list without the optional `price` column (older DBs). */
+const COLUMNS_WITHOUT_PRICE =
   'id, slug, name, dishes, category, categories, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches, contributors';
 
 /** Same list without the optional `contributors` column. */
 const COLUMNS_WITHOUT_CONTRIBUTORS =
-  'id, slug, name, dishes, category, categories, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches';
+  'id, slug, name, dishes, category, categories, restaurant, rating, price, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by, branches';
 
 /** Same list without the optional `branches` / `contributors` columns. */
 const COLUMNS_WITHOUT_BRANCHES =
-  'id, slug, name, dishes, category, categories, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
+  'id, slug, name, dishes, category, categories, restaurant, rating, price, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
 
 /** Without `contributors` / `branches` / `dishes` / `categories` columns. */
 const COLUMNS_MINIMAL =
-  'id, slug, name, category, restaurant, rating, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
+  'id, slug, name, category, restaurant, rating, price, image_url, images, tag, address, google_map_url, opening_time, review_note, created_by';
 
 /** Same list without the optional `categories` column. */
 const COLUMNS_WITHOUT_CATEGORIES = COLUMNS_MINIMAL + ', branches, contributors, dishes';
@@ -113,6 +119,16 @@ export function parseContributors(value: unknown): Contributor[] {
           : ('contributor' as const),
     }))
     .filter((item) => Boolean(item.id));
+}
+
+/** `price` is an int4 column: keep null while a dish has no price yet. */
+function parsePrice(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
 }
 
 /** A jsonb-backed category list: keep only the values the app knows. */
@@ -217,10 +233,26 @@ async function load(): Promise<void> {
     error = fallback.error;
   }
 
+  if (error) {
+    // The `price` column may not be migrated yet — the catalog still loads and
+    // every view falls back to the estimated price.
+    console.warn(
+      '[useFoods] could not read the "price" column, retrying without it:',
+      error.message,
+    );
+    const fallback = await supabase
+      .from('foods')
+      .select(COLUMNS_WITHOUT_PRICE)
+      .order('id', { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (!error) {
     const rows = (data ?? []) as Array<Record<string, unknown>>;
     cache = rows.map((row) => ({
       ...row,
+      price: parsePrice(row.price),
       categories: parseCategories(row.categories, row.category),
       contributors: parseContributors(row.contributors),
     })) as unknown as Food[];
