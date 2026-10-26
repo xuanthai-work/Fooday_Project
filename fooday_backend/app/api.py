@@ -513,10 +513,12 @@ def _history_messages(history: list[ChatMessage] | None) -> list[dict]:
 
 def _call_opencode(messages: list[dict]) -> str:
     """Send the conversation to OpenCode, retrying once on transient failures."""
+    # No `response_format: json_object` here: the OpenCode gateway rejects it
+    # with a 400 ("Model is unavailable") for some models. The system prompt
+    # already asks for JSON and `_parse_json_object` tolerates plain text.
     payload = {
         "model": config.OPENCODE_MODEL,
         "messages": messages,
-        "response_format": {"type": "json_object"},
         "temperature": 0.7,
     }
     last_error: Exception | None = None

@@ -41,12 +41,13 @@ A lightweight AI service layer.
    npm install
    ```
 3. Set up your environment variables:
-   Create a `.env.local` file based on `.env.example` and add your Supabase URL and Anon Key.
+   Copy `.env.example` to `.env.local` and fill in the two required Supabase values:
    ```bash
    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-   NEXT_PUBLIC_API_URL=http://localhost:2001/api/v1
    ```
+   `BACKEND_INTERNAL_URL` / `NEXT_PUBLIC_API_URL` are optional locally — they
+   default to `http://127.0.0.1:2001/api/v1`.
 4. Start the development server:
    ```bash
    npm run dev
@@ -60,16 +61,39 @@ A lightweight AI service layer.
 2. Create and activate a virtual environment:
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   .venv\Scripts\activate      # Windows (PowerShell / CMD)
+   source .venv/bin/activate   # macOS / Linux
    ```
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-4. Start the FastAPI server:
+4. Create the env file from the template and fill in the keys:
+   ```bash
+   Copy-Item .env.example .env   # Windows
+   cp .env.example .env          # macOS / Linux
+   ```
+   - `OPENCODE_API_KEY` — **required** for AI chat.
+   - `SUPABASE_URL` + `SUPABASE_ANON_KEY` — **required**; use the same project as the frontend.
+   - `UNSPLASH_ACCESS_KEY` — optional; without it `/api/v1/dish-image` returns an empty list and the UI falls back to its placeholder art.
+   - `INTERNAL_API_SECRET` — optional; only needed when the API is publicly deployed (the frontend forwards the same header).
+   - `OPENCODE_MODEL` must be a model the gateway really serves — check `GET {OPENCODE_BASE_URL}/models`. The default is `deepseek-v4.1-flash`.
+5. Start the FastAPI server:
    ```bash
    uvicorn app.main:app --host 127.0.0.1 --port 2001 --reload
    ```
+   Health check: <http://127.0.0.1:2001/healthz> · interactive docs: <http://127.0.0.1:2001/docs>
+
+The frontend proxies `/api/chat` and `/api/dish-image` to `BACKEND_INTERNAL_URL`
+(defaults to `http://127.0.0.1:2001/api/v1`), so no extra frontend env var is
+needed for local development.
+
+### Database (Supabase)
+The schema lives in `fooday_frontend/supabase/`. Run the numbered `*.sql` files in
+order in the Supabase SQL Editor (or `supabase db push` with the CLI).
+`init_all.sql` provisions a fresh project; the numbered files are incremental
+migrations. The app degrades gracefully when an optional column is missing, but
+new features stay inactive until their migration has been applied.
 
 ---
 
