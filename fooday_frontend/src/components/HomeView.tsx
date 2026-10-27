@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Search, Heart, Star, Sparkles, MapPin } from 'lucide-react';
@@ -8,7 +8,16 @@ import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useTranslation } from '@/i18n/LanguageContext';
-import { MOOD_TASKS, itemMatchesMood, type MoodTaskCategory } from '@/lib/moods';
+import {
+  DISH_GROUPS,
+  groupById,
+  matchesGroup,
+  matchesSubGroup,
+  subGroupOf,
+  groupOf,
+  type DishGroupId,
+  type DishSubId,
+} from '@/lib/taxonomy';
 import {
   findNearestBranch,
   formatDistance,
@@ -31,18 +40,99 @@ const normalize = (str: string) =>
     .replace(/đ/g, 'd')
     .trim();
 
+const HOME_FILTER_KEY = 'fooday:home-filter';
+
+/** Keeps the selected chip in sight when a row is wider than the screen. */
+function centerChip(bar: HTMLDivElement | null, selector: string) {
+  const chip = bar?.querySelector<HTMLElement>(selector);
+  if (!bar || !chip) return;
+  bar.scrollTo({
+    left: chip.offsetLeft - bar.clientWidth / 2 + chip.clientWidth / 2,
+    behavior: 'smooth',
+  });
+}
+
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { t, lang } = useTranslation();
   const { foods, loading } = useFoods();
   const { ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
   const { coords } = useUserLocation();
-  const [selectedMood, setSelectedMood] = useState<MoodTaskCategory>('All');
+  const [selectedGroup, setSelectedGroup] = useState<DishGroupId>('all');
+  const [selectedSub, setSelectedSub] = useState<DishSubId | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
   const searchParams = useSearchParams();
   const dishParam = searchParams.get('dish');
   const handledDishParamRef = useRef<string | null>(null);
+  const groupBarRef = useRef<HTMLDivElement | null>(null);
+  const subBarRef = useRef<HTMLDivElement | null>(null);
+
+  // Fade only the edges that actually hide more chips, so a fully visible row
+  // never looks truncated and a scrolled one never looks broken.
+  const [scrollFade, setScrollFade] = useState({
+    groupStart: false,
+    groupEnd: false,
+    subStart: false,
+    subEnd: false,
+  });
+
+  const syncScrollFade = useCallback(() => {
+    const edges = (el: HTMLDivElement | null) => {
+      if (!el) return { start: false, end: false };
+      return {
+        start: el.scrollLeft > 4,
+        end: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+      };
+    };
+    const group = edges(groupBarRef.current);
+    const sub = edges(subBarRef.current);
+    setScrollFade((prev) =>
+      prev.groupStart === group.start &&
+      prev.groupEnd === group.end &&
+      prev.subStart === sub.start &&
+      prev.subEnd === sub.end
+        ? prev
+        : {
+            groupStart: group.start,
+            groupEnd: group.end,
+            subStart: sub.start,
+            subEnd: sub.end,
+          },
+    );
+  }, []);
+
+  // Remember the last chip so the second visit is one glance, zero taps.
+  // The read happens exactly once (a ref guards StrictMode's double effect);
+  // it must never re-read, otherwise the write below would echo back.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    try {
+      const raw = window.localStorage.getItem(HOME_FILTER_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { group?: DishGroupId; sub?: DishSubId | null };
+      if (!saved.group || !DISH_GROUPS.some((group) => group.id === saved.group)) return;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore the saved chip once on mount
+      setSelectedGroup(saved.group);
+      if (saved.group !== 'all' && saved.sub) setSelectedSub(saved.sub);
+    } catch {
+      /* private mode or corrupted value — start from "Tất cả" */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!restoredRef.current) return;
+    try {
+      window.localStorage.setItem(
+        HOME_FILTER_KEY,
+        JSON.stringify({ group: selectedGroup, sub: selectedSub }),
+      );
+    } catch {
+      /* storage unavailable — the filter still works for this session */
+    }
+  }, [selectedGroup, selectedSub]);
 
   // Open a dish from anywhere: other views dispatch a custom event, and the
   // AddDishModal duplicate flow uses the `?dish=<id>` query param so the
@@ -65,7 +155,81 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
     setSelectedDish(target);
   }, [dishParam, foods]);
 
-  const currentMoodOption = MOOD_TASKS.find((m) => m.id === selectedMood) ?? MOOD_TASKS[0];
+  const currentGroup = groupById(selectedGroup);
+
+  // Everything is classified once per catalog change, never per keystroke.
+  const groupCounts = useMemo(() => {
+    const counts = new Map<DishGroupId, number>([['all', foods.length]]);
+    for (const item of foods) {
+      const group = groupOf(item);
+      if (!group) continue;
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return counts;
+  }, [foods]);
+
+  // Only branches with dishes are offered: never a chip that opens on "0 món".
+  const visibleGroups = useMemo(
+    () => DISH_GROUPS.filter((group) => group.id === 'all' || (groupCounts.get(group.id) ?? 0) > 0),
+    [groupCounts],
+  );
+
+  const subCounts = useMemo(() => {
+    const counts = new Map<DishSubId, number>();
+    if (selectedGroup === 'all' || !currentGroup.subs) return counts;
+    for (const item of foods) {
+      if (groupOf(item) !== selectedGroup) continue;
+      const sub = subGroupOf(item, selectedGroup);
+      if (sub) counts.set(sub, (counts.get(sub) ?? 0) + 1);
+    }
+    return counts;
+  }, [foods, selectedGroup, currentGroup]);
+
+  const visibleSubs = useMemo(
+    () => (currentGroup.subs ?? []).filter((sub) => (subCounts.get(sub.id) ?? 0) > 0),
+    [currentGroup, subCounts],
+  );
+
+  // A single sub-chip is noise — the branch already means exactly that.
+  const showSubRow = selectedGroup !== 'all' && visibleSubs.length >= 2;
+
+  const selectGroup = (group: DishGroupId) => {
+    setSelectedGroup(group);
+    setSelectedSub(null);
+  };
+
+  const selectSub = (sub: DishSubId) => {
+    setSelectedSub((current) => (current === sub ? null : sub));
+  };
+
+  // "Đồ khô · Bún trộn" reads well, "Buffet · Buffet chay" does not.
+  const sectionTitle = (() => {
+    if (!selectedSub) {
+      return selectedGroup === 'all' ? t.home.popularPicks : t.home.groups[currentGroup.id];
+    }
+    const groupLabel = t.home.groups[currentGroup.id];
+    const subLabel = t.home.subgroups[selectedSub];
+    return normalize(subLabel).includes(normalize(groupLabel))
+      ? subLabel
+      : `${groupLabel} · ${subLabel}`;
+  })();
+
+  // With seven branches the selected chip can sit off-screen (e.g. after a
+  // restore or when it is picked from the tray) — keep it centered.
+  useEffect(() => {
+    centerChip(groupBarRef.current, '.group-chip.active');
+    syncScrollFade();
+  }, [selectedGroup, visibleGroups.length, syncScrollFade]);
+
+  useEffect(() => {
+    centerChip(subBarRef.current, '.sub-chip.active');
+    syncScrollFade();
+  }, [selectedGroup, selectedSub, showSubRow, syncScrollFade]);
+
+  useEffect(() => {
+    window.addEventListener('resize', syncScrollFade);
+    return () => window.removeEventListener('resize', syncScrollFade);
+  }, [syncScrollFade]);
 
   // The shortened Google Maps links hide their coordinates: expand them in the
   // background so every card can show its distance to the closest outlet.
@@ -103,7 +267,8 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   }, [foods, coords, coordsRevision, t.branches.mainBranch]);
 
   const filteredFoods = foods.filter((item) => {
-    const matchesMood = itemMatchesMood(item, currentMoodOption);
+    const matchesSelection =
+      matchesGroup(item, selectedGroup) && matchesSubGroup(item, selectedGroup, selectedSub);
     const q = normalize(searchQuery);
     const matchesSearch =
       q === '' ||
@@ -116,7 +281,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         // Search hits the whole menu: any dish in `dishes` finds the place.
         (item.dishes ?? []).join(' · '),
       ].some((field) => field != null && normalize(field).includes(q));
-    return matchesMood && matchesSearch;
+    return matchesSelection && matchesSearch;
   });
 
   const trimmedQuery = searchQuery.trim();
@@ -162,30 +327,73 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         <p className="search-status">{t.home.foundResults(filteredFoods.length)}</p>
       )}
 
-      {/* Mood / Task categories */}
-      <div className="mood-categories" role="tablist" aria-label="Nhu cầu ăn uống">
-        {MOOD_TASKS.map((task) => {
-          const isActive = selectedMood === task.id;
+      {/* Level 1 — what kind of meal */}
+      <div
+        className={`group-bar ${scrollFade.groupStart ? 'fade-start' : ''} ${scrollFade.groupEnd ? 'fade-end' : ''}`}
+        role="tablist"
+        aria-label={t.home.groupLabel}
+        ref={groupBarRef}
+        onScroll={syncScrollFade}
+      >
+        {visibleGroups.map((group) => {
+          const isActive = selectedGroup === group.id;
           return (
             <button
-              key={task.id}
+              key={group.id}
               role="tab"
               aria-selected={isActive}
-              onClick={() => setSelectedMood(task.id)}
-              className={`chip mood-chip ${isActive ? 'active' : ''}`}
+              onClick={() => selectGroup(group.id)}
+              className={`chip group-chip ${isActive ? 'active' : ''}`}
             >
-              <span className="mood-icon">{task.icon}</span>
-              <span>{t.home.moods[task.labelKey]}</span>
+              <span className="group-icon" aria-hidden="true">
+                {group.icon}
+              </span>
+              <span>{t.home.groups[group.id]}</span>
             </button>
           );
         })}
       </div>
 
+      {/* Level 2 — refine inside the chosen branch, never required */}
+      {showSubRow && (
+        <div className="sub-panel" key={currentGroup.id}>
+          <div
+            className={`sub-bar ${scrollFade.subStart ? 'fade-start' : ''} ${scrollFade.subEnd ? 'fade-end' : ''}`}
+            role="group"
+            aria-label={t.home.groupLabel}
+            ref={subBarRef}
+            onScroll={syncScrollFade}
+          >
+            <button
+              aria-pressed={selectedSub === null}
+              onClick={() => setSelectedSub(null)}
+              className={`sub-chip ${selectedSub === null ? 'active' : ''}`}
+            >
+              {t.home.groups.all}
+              <span className="sub-count">{groupCounts.get(currentGroup.id) ?? 0}</span>
+            </button>
+            {visibleSubs.map((sub, index) => {
+              const isActive = selectedSub === sub.id;
+              return (
+                <button
+                  key={sub.id}
+                  aria-pressed={isActive}
+                  onClick={() => selectSub(sub.id)}
+                  className={`sub-chip ${isActive ? 'active' : ''}`}
+                  style={{ animationDelay: `${index * 35}ms` }}
+                >
+                  {t.home.subgroups[sub.id]}
+                  <span className="sub-count">{subCounts.get(sub.id) ?? 0}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Section label */}
       <div className="section-row">
-        <h2 className="section-title">
-          {selectedMood === 'All' ? t.home.popularPicks : t.home.moods[currentMoodOption.labelKey]}
-        </h2>
+        <h2 className="section-title">{sectionTitle}</h2>
         <span className="section-count">{t.home.dishCount(filteredFoods.length)}</span>
       </div>
 
@@ -391,17 +599,17 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           font-weight: 600;
           color: var(--primary-strong);
         }
-        .mood-categories {
+        .group-bar {
           display: flex;
           gap: 8px;
           overflow-x: auto;
           padding: 2px 2px 8px;
-          margin-bottom: 18px;
+          margin-bottom: 12px;
           -ms-overflow-style: none;
           scrollbar-width: none;
           -webkit-overflow-scrolling: touch;
         }
-        .mood-categories::-webkit-scrollbar {
+        .group-bar::-webkit-scrollbar {
           display: none;
           width: 0;
           height: 0;
@@ -425,12 +633,17 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
             background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
             box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
         }
-        .mood-chip {
-          gap: 5px;
+        .group-chip {
+          gap: 6px;
+          min-height: 38px;
+          padding: 0 15px 0 12px;
+          font-size: 0.84375rem;
+          letter-spacing: -0.01em;
         }
-        .mood-icon {
-          font-size: 0.9375rem;
+        .group-icon {
+          font-size: 1rem;
           line-height: 1;
+          transform: translateY(-0.5px);
         }
         .chip:hover:not(.active) {
           transform: translateY(-2px);
@@ -442,6 +655,131 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           color: var(--primary-contrast);
           border-color: transparent;
           box-shadow: var(--shadow-primary);
+        }
+        /* Level 2 lives inside a soft tray so the hierarchy is obvious at a
+           glance: the tray belongs to the level-1 chip above it. */
+        .sub-panel {
+          margin: 0 0 18px;
+          padding: 7px;
+          border-radius: 18px;
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+          animation: subIn var(--dur) var(--ease-out) both;
+          overflow: hidden;
+        }
+        .sub-bar {
+          display: flex;
+          gap: 6px;
+          overflow-x: auto;
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
+        }
+        /* Edge fades are applied only to the side that still hides chips. */
+        .group-bar.fade-end,
+        .sub-bar.fade-end {
+          -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 14px), transparent 100%);
+          mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 14px), transparent 100%);
+        }
+        .group-bar.fade-start,
+        .sub-bar.fade-start {
+          -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 100%);
+        }
+        .group-bar.fade-start.fade-end,
+        .sub-bar.fade-start.fade-end {
+          -webkit-mask-image: linear-gradient(
+            to right,
+            transparent 0,
+            #000 16px,
+            #000 calc(100% - 14px),
+            transparent 100%
+          );
+          mask-image: linear-gradient(
+            to right,
+            transparent 0,
+            #000 16px,
+            #000 calc(100% - 14px),
+            transparent 100%
+          );
+        }
+        .sub-bar::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+        .sub-chip {
+          flex-shrink: 0;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 34px;
+          padding: 0 11px;
+          border-radius: var(--r-full);
+          border: 1px solid var(--border);
+          background: var(--surface);
+          color: var(--text-soft);
+          font-size: 0.78125rem;
+          font-weight: 600;
+          cursor: pointer;
+          white-space: nowrap;
+          animation: subChipIn 0.34s var(--ease-out) both;
+          transition: transform var(--dur-fast) var(--ease),
+            background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+            border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .sub-chip:hover:not(.active) {
+          transform: translateY(-1px);
+          border-color: var(--primary-soft-2);
+          color: var(--primary-strong);
+        }
+        .sub-chip.active {
+          background: var(--primary-soft);
+          border-color: var(--primary);
+          color: var(--primary-strong);
+          box-shadow: 0 2px 10px -5px var(--ring);
+        }
+        .sub-count {
+          font-size: 0.6875rem;
+          font-weight: 800;
+          font-variant-numeric: tabular-nums;
+          line-height: 1;
+          padding: 3px 6px;
+          border-radius: var(--r-full);
+          background: var(--surface-3);
+          color: var(--text-faint);
+          transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+        }
+        .sub-chip.active .sub-count {
+          background: var(--primary);
+          color: var(--primary-contrast);
+        }
+        @keyframes subIn {
+          from {
+            opacity: 0;
+            transform: translateY(-6px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes subChipIn {
+          from {
+            opacity: 0;
+            transform: translateY(-4px) scale(0.96);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .sub-panel,
+          .sub-chip {
+            animation: none;
+          }
         }
         .section-row {
           display: flex;
