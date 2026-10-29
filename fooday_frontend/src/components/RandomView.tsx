@@ -13,13 +13,13 @@ import {
   Star,
   Eye,
 } from 'lucide-react';
-import { useFoods, FoodCategory, Food } from '@/hooks/useFoods';
+import { useFoods, foodHasCategory, FoodCategory, Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useEmojiRain } from '@/hooks/useEmojiRain';
 import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
-import { MOOD_TASKS, itemMatchesMood, type MoodTaskCategory } from '@/lib/moods';
+import { groupOf, subGroupOf, type DishSubId } from '@/lib/taxonomy';
 import {
   findNearestBranch,
   formatDistance,
@@ -53,12 +53,6 @@ function rarityOf(rating: number): Rarity {
   if (rating >= 4.3) return 'pink';
   if (rating >= 4.0) return 'purple';
   return 'blue';
-}
-
-/** Every category of a dish (falls back to the legacy single category). */
-function foodCategoriesOf(item: Food): FoodCategory[] {
-  const list = item.categories ?? [];
-  return list.length > 0 ? list : [item.category];
 }
 
 const normalize = (value: string) =>
@@ -126,16 +120,29 @@ function inPriceTier(price: number, tier: PriceTier): boolean {
   return price > 299000;
 }
 
+/** The three chips the roulette spins inside: đồ ăn / đồ uống / ăn vặt. */
+type RandomKind = FoodCategory;
+
+const RANDOM_KINDS: { id: RandomKind; icon: string }[] = [
+  { id: 'Foods', icon: '🍚' },
+  { id: 'Drinks', icon: '🥤' },
+  { id: 'Snacks', icon: '🍿' },
+];
+
+/** Key used for dishes the taxonomy cannot name yet. */
+const OTHER_TYPE = 'other';
+
 /**
- * One dish name shared by every restaurant serving it. The roulette spins on
- * dishes (not on individual places) so the result is "what to eat" and the
- * restaurants come afterwards.
+ * One dish *type* ("Cơm", "Phở", "Trà sữa"…) and every restaurant serving it.
+ * The roulette spins on the type — never on a single restaurant's dish — so the
+ * result is "what to eat" and the places are listed afterwards, closest first.
  */
 interface DishGroup {
   key: string;
   name: string;
   image_url: string;
   categories: FoodCategory[];
+  /** One row per restaurant that serves this type of dish. */
   places: Food[];
   /** Best rating among the places serving it. */
   rating: number;
@@ -145,36 +152,87 @@ interface DishGroup {
   estimated: boolean;
 }
 
-function buildDishGroups(pool: Food[]): DishGroup[] {
-  const byName = new Map<string, Food[]>();
-  for (const food of pool) {
-    const key = normalize(food.name).trim();
-    if (!key) continue;
-    const list = byName.get(key);
-    if (list) list.push(food);
-    else byName.set(key, [food]);
+/**
+ * The chip + dish type of a catalog row. Rows the taxonomy cannot name still
+ * belong to the category their contributor picked, so nothing vanishes from
+ * the reel.
+ */
+function typeOf(food: Food): { kind: RandomKind; key: string } {
+  const group = groupOf(food);
+  if (group === 'uong') return { kind: 'Drinks', key: subGroupOf(food, group) ?? OTHER_TYPE };
+  if (group === 'anVat') return { kind: 'Snacks', key: subGroupOf(food, group) ?? OTHER_TYPE };
+  if (group) return { kind: 'Foods', key: subGroupOf(food, group) ?? OTHER_TYPE };
+  if (foodHasCategory(food, 'Drinks')) return { kind: 'Drinks', key: OTHER_TYPE };
+  if (foodHasCategory(food, 'Snacks')) return { kind: 'Snacks', key: OTHER_TYPE };
+  return { kind: 'Foods', key: OTHER_TYPE };
+}
+
+/** Prices of a group: real prices when any exist, estimates as a fallback. */
+function priceValues(places: Food[]): { values: number[]; estimated: boolean } {
+  const real = places
+    .map((place) => place.price)
+    .filter((value): value is number => typeof value === 'number' && value > 0);
+  if (real.length > 0) return { values: real, estimated: false };
+  return { values: places.map((place) => priceOf(place).value), estimated: true };
+}
+
+/** Keep one row per restaurant — the best matching dish of that restaurant. */
+function bestPlacePerRestaurant(places: Food[]): Food[] {
+  const byRestaurant = new Map<string, Food>();
+  for (const place of places) {
+    const key = normalize(place.restaurant).trim() || `id:${place.id}`;
+    const current = byRestaurant.get(key);
+    if (!current) {
+      byRestaurant.set(key, place);
+      continue;
+    }
+    const hasRealPrice = typeof place.price === 'number' && place.price > 0;
+    const currentHasRealPrice = typeof current.price === 'number' && current.price > 0;
+    if (hasRealPrice !== currentHasRealPrice ? hasRealPrice : place.rating > current.rating) {
+      byRestaurant.set(key, place);
+    }
+  }
+  return Array.from(byRestaurant.values());
+}
+
+function buildDishGroups(
+  items: Food[],
+  kind: RandomKind,
+  labelOf: (key: string) => string,
+): DishGroup[] {
+  const byType = new Map<string, Food[]>();
+  for (const item of items) {
+    const type = typeOf(item);
+    if (type.kind !== kind) continue;
+    const list = byType.get(type.key);
+    if (list) list.push(item);
+    else byType.set(type.key, [item]);
   }
 
   const groups: DishGroup[] = [];
-  for (const [key, places] of byName) {
-    const real = places
-      .map((place) => place.price)
-      .filter((value): value is number => typeof value === 'number' && value > 0);
-    const values = real.length > 0 ? real : places.map((place) => priceOf(place).value);
-    const best = places.reduce((acc, place) => Math.max(acc, place.rating), 0);
+  for (const [key, matches] of byType) {
+    const places = bestPlacePerRestaurant(matches);
+    if (places.length === 0) continue;
+    const { values, estimated } = priceValues(places);
+    const best = places.reduce(
+      (acc, place) => (place.rating > acc.rating ? place : acc),
+      places[0],
+    );
     groups.push({
       key,
-      name: places[0].name,
-      image_url: places[0].image_url,
-      categories: foodCategoriesOf(places[0]),
+      name: labelOf(key),
+      image_url: best.image_url,
+      categories: [kind],
       places,
-      rating: best,
+      rating: Math.max(...places.map((place) => place.rating)),
       minPrice: Math.min(...values),
       maxPrice: Math.max(...values),
-      estimated: real.length === 0,
+      estimated,
     });
   }
-  return groups;
+
+  // Types with the most choices first, best rated as the tie-breaker.
+  return groups.sort((a, b) => b.places.length - a.places.length || b.rating - a.rating);
 }
 
 /** `40k` for a single price, `15k – 25k` for a range, `~` when estimated. */
@@ -193,7 +251,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const { bursts, trigger: triggerRain } = useEmojiRain();
   const { enabled: funEnabled } = useFunEffects();
   const { coords } = useUserLocation();
-  const [topic, setTopic] = useState<MoodTaskCategory>('All');
+  const [kind, setKind] = useState<RandomKind>('Foods');
   const [priceTier, setPriceTier] = useState<PriceTier>('all');
   const [reel, setReel] = useState<DishGroup[]>([]);
   const [spinning, setSpinning] = useState(false);
@@ -211,11 +269,16 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
 
-  // Every dish of the chosen mood/occasion, once per unique dish name.
-  const pool = useMemo(
-    () => buildDishGroups(foods.filter((f) => itemMatchesMood(f, topic))),
-    [foods, topic],
-  );
+  // Every dish type of the selected chip (đồ ăn / đồ uống / ăn vặt) with the
+  // restaurants serving it — the roulette picks the type, not a single place.
+  const pool = useMemo(() => {
+    const otherLabel = t.random.otherTypes[kind];
+    const labelOf = (key: string) =>
+      key === OTHER_TYPE
+        ? otherLabel
+        : (t.home.subgroups[key as DishSubId] ?? otherLabel);
+    return buildDishGroups(foods, kind, labelOf);
+  }, [foods, kind, t]);
 
   const initialReel = useMemo(() => buildReel(pool), [pool]);
   const track = reel.length > 0 ? reel : initialReel;
@@ -305,9 +368,9 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     setIsTransitioning(false);
   };
 
-  const selectTopic = (next: MoodTaskCategory) => {
+  const selectKind = (next: RandomKind) => {
     if (spinning) return;
-    setTopic(next);
+    setKind(next);
     resetSpin();
   };
 
@@ -390,17 +453,17 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         <h1 className="rnd-title">{t.random.title}</h1>
       </header>
 
-      <div className="rnd-chips" role="tablist" aria-label={t.random.topicLabel}>
-        {MOOD_TASKS.map((task) => (
+      <div className="rnd-chips" role="tablist" aria-label={t.random.categoryLabel}>
+        {RANDOM_KINDS.map((option) => (
           <button
-            key={task.id}
-            className={`chip mood-chip ${topic === task.id ? 'active' : ''}`}
-            onClick={() => selectTopic(task.id)}
+            key={option.id}
+            className={`chip mood-chip ${kind === option.id ? 'active' : ''}`}
+            onClick={() => selectKind(option.id)}
             disabled={spinning}
-            aria-pressed={topic === task.id}
+            aria-pressed={kind === option.id}
           >
-            <span className="mood-icon">{task.icon}</span>
-            {t.random.topics[task.labelKey]}
+            <span className="mood-icon">{option.icon}</span>
+            {t.random.kinds[option.id]}
           </button>
         ))}
       </div>
@@ -428,9 +491,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                     className="rc-img"
                     style={{ objectFit: 'cover' }}
                   />
-                  <span className="rc-cat">
-                    {group.categories.map((c) => t.home.categories[c]).join(' · ')}
-                  </span>
+                  <span className="rc-cat">{t.random.kinds[kind]}</span>
                   <span className="rc-price" title={group.estimated ? t.random.priceEstimated : undefined}>
                     {formatGroupPrice(group)}
                   </span>
@@ -445,9 +506,9 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         ) : (
           <div className="roulette-empty">
             <p>{t.random.empty}</p>
-            {topic !== 'All' && (
-              <button className="mini-act" onClick={() => selectTopic('All')}>
-                {t.random.showAllTopics}
+            {kind !== 'Foods' && (
+              <button className="mini-act" onClick={() => selectKind('Foods')}>
+                {t.random.showAllFoods}
               </button>
             )}
           </div>
@@ -544,6 +605,9 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                         </span>
                         <span className="place-main">
                           <span className="place-name">{place.restaurant}</span>
+                          {normalize(place.name) !== normalize(result.name) && (
+                            <span className="place-dish">{place.name}</span>
+                          )}
                           <span className="place-meta">
                             <Star size={12} fill="var(--star)" color="var(--star)" />
                             {rating.toFixed(1)}
@@ -1126,6 +1190,14 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           gap: 4px;
           font-size: 11.5px;
           color: var(--text-soft);
+        }
+        .place-dish {
+          display: block;
+          font-size: 11px;
+          color: var(--text-faint);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .place-distance {
           color: var(--text-soft);
