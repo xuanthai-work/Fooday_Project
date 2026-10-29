@@ -5,13 +5,21 @@ import { supabase } from '@/lib/supabaseClient';
 
 export interface UserReviewRow {
   id: number;
+  food_id: number;
+  rating: number;
+  comment: string;
   image_url: string | null;
+  created_at: string;
 }
+
+const COLUMNS = 'id, food_id, rating, comment, image_url, created_at';
+/** Same list for databases where `image_url` has not been migrated yet. */
+const COLUMNS_BASE = 'id, food_id, rating, comment, created_at';
 
 /**
  * The reviews written by one account. Used by the profile page to compute
- * the reward points, so it follows the reviews table in realtime and the
- * points update as soon as a review is posted or removed.
+ * the reward points and to list the review history, so it follows the reviews
+ * table in realtime and refreshes as soon as a review is posted or removed.
  */
 export function useUserReviews(userId: string | null) {
   const [reviews, setReviews] = useState<UserReviewRow[]>([]);
@@ -22,12 +30,26 @@ export function useUserReviews(userId: string | null) {
 
     const load = async () => {
       if (!id) return;
-      const { data } = await supabase
+      const full = await supabase
         .from('reviews')
-        .select('id, image_url')
-        .eq('user_id', id);
-      if (!active) return;
-      setReviews((data ?? []) as UserReviewRow[]);
+        .select(COLUMNS)
+        .eq('user_id', id)
+        .order('created_at', { ascending: false });
+      const result = full.error
+        ? await supabase
+            .from('reviews')
+            .select(COLUMNS_BASE)
+            .eq('user_id', id)
+            .order('created_at', { ascending: false })
+        : full;
+      if (!active || result.error) return;
+      const rows = (result.data ?? []) as Array<Partial<UserReviewRow> & Record<string, unknown>>;
+      setReviews(
+        rows.map((row) => ({
+          ...(row as UserReviewRow),
+          image_url: typeof row.image_url === 'string' ? row.image_url : null,
+        })),
+      );
     };
 
     // Defer the initial load out of the effect body (no sync setState in effect).

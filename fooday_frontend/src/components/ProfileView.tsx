@@ -27,7 +27,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { LANGUAGES } from '@/i18n/translations';
-import { calculateReviewPoints } from '@/lib/reviewPhotos';
+import { calculateReviewPoints, parseReviewPhotos } from '@/lib/reviewPhotos';
 import { nextTierOf, tierForPoints, tierProgress, MEMBER_TIERS } from '@/lib/memberTiers';
 import DishDetailModal from './DishDetailModal';
 
@@ -46,6 +46,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const [tab, setTab] = useState<'favorites' | 'history'>('favorites');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reviewsOpen, setReviewsOpen] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const settingsAnchorRef = useRef<HTMLDivElement>(null);
@@ -77,9 +78,11 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   }, []);
 
   useEffect(() => {
-    if (!tierOpen) return;
+    if (!tierOpen && !reviewsOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setTierOpen(false);
+      if (event.key !== 'Escape') return;
+      setTierOpen(false);
+      setReviewsOpen(false);
     };
     document.addEventListener('keydown', onKey);
     const previousOverflow = document.body.style.overflow;
@@ -88,7 +91,7 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = previousOverflow;
     };
-  }, [tierOpen]);
+  }, [tierOpen, reviewsOpen]);
 
   const favoriteItems = [...favorites]
     .map((id) => byId[id])
@@ -110,6 +113,18 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
   const nextTier = nextTierOf(tier);
   const progress = Math.round(tierProgress(points) * 100);
   const pointsToNext = nextTier ? Math.max(0, nextTier.min - points) : 0;
+
+  /** Reviews are dated day/month/year in the review history sheet. */
+  const formatReviewDate = (value: string | null | undefined) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
 
   const handleUpgrade = async () => {
     // To upgrade, they just sign out of guest mode to go back to AuthScreen
@@ -326,10 +341,18 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           <span className="stat-label">{t.profile.statDishes}</span>
         </div>
         <span className="stat-divider" />
-        <div className="stat">
+        <button
+          type="button"
+          className="stat stat-button"
+          onClick={() => setReviewsOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={reviewsOpen}
+          aria-label={t.profile.reviewsTitle}
+          title={t.profile.reviewsTitle}
+        >
           <span className="stat-num">{userReviews.length}</span>
           <span className="stat-label">{t.profile.statReviews}</span>
-        </div>
+        </button>
         <span className="stat-divider" />
         <div className="stat">
           <span className="stat-num">{points}</span>
@@ -482,6 +505,133 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
                   ? t.profile.tierNext(pointsToNext, t.profile.tiers[nextTier.id])
                   : t.profile.tierMax}
               </p>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {mounted &&
+        reviewsOpen &&
+        createPortal(
+          <div
+            className="tier-overlay"
+            role="presentation"
+            onClick={() => setReviewsOpen(false)}
+          >
+            <div
+              className="tier-sheet reviews-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reviews-sheet-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header className="tier-sheet-head">
+                <h3 id="reviews-sheet-title">{t.profile.reviewsTitle}</h3>
+                <button
+                  type="button"
+                  className="tier-sheet-close"
+                  onClick={() => setReviewsOpen(false)}
+                  aria-label={t.profile.reviewsClose}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              {userReviews.length === 0 ? (
+                <div className="placeholder reviews-placeholder">
+                  <div className="ph-icon">
+                    <Star size={26} />
+                  </div>
+                  <p className="ph-title">{t.profile.reviewsEmpty}</p>
+                  <span className="ph-sub">{t.profile.reviewsEmptySub}</span>
+                </div>
+              ) : (
+                <ul className="reviews-list">
+                  {userReviews.map((review) => {
+                    const dish = byId[review.food_id];
+                    const photos = parseReviewPhotos(review.image_url);
+                    const thumb = dish?.image_url ?? photos[0] ?? null;
+                    const rating = Number(review.rating) || 0;
+                    const stars = Math.round(rating);
+                    return (
+                      <li key={review.id}>
+                        <button
+                          type="button"
+                          className="review-item"
+                          disabled={!dish}
+                          title={dish ? t.profile.openDish : undefined}
+                          onClick={() => {
+                            if (!dish) return;
+                            setReviewsOpen(false);
+                            setSelectedDish(dish);
+                          }}
+                        >
+                          <span className="review-thumb">
+                            {thumb ? (
+                              <Image
+                                src={thumb}
+                                alt={dish?.name ?? t.profile.statReviews}
+                                fill
+                                sizes="54px"
+                                className="review-thumb-img"
+                                style={{ objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <span className="review-thumb-fallback" aria-hidden="true">
+                                <Star size={18} />
+                              </span>
+                            )}
+                          </span>
+                          <span className="review-body">
+                            <span className="review-head">
+                              <span className="review-place">
+                                {dish?.restaurant ?? t.profile.reviewDishMissing}
+                              </span>
+                              <span className="review-date">
+                                {formatReviewDate(review.created_at)}
+                              </span>
+                            </span>
+                            {dish && <span className="review-dish">{dish.name}</span>}
+                            <span className="review-stars" aria-label={`${rating}/5`}>
+                              {[1, 2, 3, 4, 5].map((step) => (
+                                <Star
+                                  key={step}
+                                  size={11}
+                                  fill={step <= stars ? 'var(--star)' : 'none'}
+                                  color={step <= stars ? 'var(--star)' : 'var(--border-strong)'}
+                                />
+                              ))}
+                              <span className="review-score">{rating.toFixed(1)}</span>
+                            </span>
+                            <span className="review-comment">{review.comment}</span>
+                            {photos.length > 0 && (
+                              <span className="review-photos">
+                                {photos.slice(0, 3).map((photo, index) => (
+                                  <span key={`${photo}-${index}`} className="review-photo">
+                                    <Image
+                                      src={photo}
+                                      alt=""
+                                      fill
+                                      sizes="44px"
+                                      style={{ objectFit: 'cover' }}
+                                    />
+                                  </span>
+                                ))}
+                                {photos.length > 3 && (
+                                  <span className="review-photo-more">
+                                    +{photos.length - 3}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </span>
+                          {dish && <ChevronRight size={16} className="review-chev" />}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
           </div>,
           document.body,
@@ -1154,6 +1304,140 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           font-weight: 600;
           color: var(--text-faint);
         }
+        /* ---- Review history sheet ---- */
+        .reviews-sheet {
+          width: min(420px, 100%);
+          max-height: min(82vh, 620px);
+        }
+        .reviews-placeholder {
+          padding: 26px 8px 10px;
+        }
+        .reviews-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .review-item {
+          width: 100%;
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          color: inherit;
+          text-align: left;
+          cursor: pointer;
+          transition: border-color var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .review-item:hover:not(:disabled) {
+          transform: translateY(-1px);
+          border-color: var(--primary);
+          box-shadow: var(--shadow-sm);
+        }
+        .review-item:disabled {
+          cursor: default;
+        }
+        .review-thumb {
+          position: relative;
+          flex: 0 0 auto;
+          width: 54px;
+          height: 54px;
+          border-radius: 10px;
+          overflow: hidden;
+          background: var(--surface);
+          display: grid;
+          place-items: center;
+        }
+        .review-thumb-img {
+          object-fit: cover;
+        }
+        .review-thumb-fallback {
+          color: var(--text-faint);
+        }
+        .review-body {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .review-head {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .review-place {
+          min-width: 0;
+          font-size: 12.5px;
+          font-weight: 800;
+          color: var(--text);
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
+        .review-date {
+          flex: 0 0 auto;
+          font-size: 10.5px;
+          font-weight: 600;
+          color: var(--text-faint);
+        }
+        .review-dish {
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--text-soft);
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
+        .review-stars {
+          display: inline-flex;
+          align-items: center;
+          gap: 1px;
+        }
+        .review-score {
+          margin-left: 3px;
+          font-size: 10.5px;
+          font-weight: 700;
+          color: var(--text-soft);
+        }
+        .review-comment {
+          font-size: 12.5px;
+          line-height: 1.45;
+          color: var(--text);
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+        }
+        .review-photos {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 2px;
+        }
+        .review-photo {
+          position: relative;
+          width: 44px;
+          height: 44px;
+          border-radius: 8px;
+          overflow: hidden;
+          background: var(--surface);
+        }
+        .review-photo-more {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--text-faint);
+        }
+        .review-chev {
+          flex: 0 0 auto;
+          margin-top: 18px;
+          color: var(--text-faint);
+        }
         @keyframes tierFade {
           from {
             opacity: 0;
@@ -1224,6 +1508,30 @@ export default function ProfileView({ onNavigateToChat }: ProfileViewProps) {
           color: var(--text-soft);
           font-weight: 500;
           white-space: nowrap;
+        }
+        /* The reviews stat opens the history sheet; the others stay static. */
+        .stat-button {
+          border: 0;
+          background: transparent;
+          padding: 4px 2px;
+          font: inherit;
+          cursor: pointer;
+          border-radius: var(--r-md);
+          transition: background var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease);
+        }
+        .stat-button:hover {
+          background: var(--surface-2);
+        }
+        .stat-button:hover .stat-num {
+          color: var(--primary-strong);
+        }
+        .stat-button:active {
+          transform: scale(0.97);
+        }
+        .stat-button:focus-visible {
+          outline: 2px solid var(--primary);
+          outline-offset: 2px;
         }
         /* Four stats now live in the bar — keep them readable on small phones. */
         @media (max-width: 420px) {
