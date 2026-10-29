@@ -109,6 +109,10 @@ export default function ChatView({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ReplyRef | null>(null);
+  // On touch screens the like / reply buttons appear after a long press.
+  const [openActionsId, setOpenActionsId] = useState<string | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -286,8 +290,57 @@ export default function ChatView({
 
   const startReply = (msg: Message) => {
     setReplyingTo({ id: msg.id, text: msg.message });
+    setOpenActionsId(null);
     inputRef.current?.focus();
   };
+
+  // --- Touch: long-press a bot message to reveal its actions ----------------
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    pressOrigin.current = null;
+  };
+
+  const startLongPress = (id: string, event: React.TouchEvent) => {
+    if (event.touches.length !== 1) return;
+    clearLongPress();
+    const touch = event.touches[0];
+    pressOrigin.current = { x: touch.clientX, y: touch.clientY };
+    longPressTimer.current = setTimeout(() => {
+      setOpenActionsId(id);
+      longPressTimer.current = null;
+    }, 450);
+  };
+
+  const moveLongPress = (event: React.TouchEvent) => {
+    const origin = pressOrigin.current;
+    if (!origin) return;
+    const touch = event.touches[0];
+    if (Math.hypot(touch.clientX - origin.x, touch.clientY - origin.y) > 10) {
+      clearLongPress();
+    }
+  };
+
+  useEffect(
+    () => () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    },
+    [],
+  );
+
+  // A touch anywhere else closes the revealed actions.
+  useEffect(() => {
+    if (!openActionsId) return;
+    const close = (event: TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(`[data-msg-id="${openActionsId}"]`)) return;
+      setOpenActionsId(null);
+    };
+    document.addEventListener('touchstart', close);
+    return () => document.removeEventListener('touchstart', close);
+  }, [openActionsId]);
 
   useEffect(() => {
     if (!initialMessageToSend) return;
@@ -329,8 +382,17 @@ export default function ChatView({
           {messages.map((msg, index) => (
             <div
               key={msg.id}
-              className={`row ${msg.isUser ? 'user' : 'ai'}`}
+              data-msg-id={msg.id}
+              className={`row ${msg.isUser ? 'user' : 'ai'} ${
+                openActionsId === msg.id ? 'actions-open' : ''
+              }`}
               style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
+              onTouchStart={
+                msg.isUser ? undefined : (event) => startLongPress(msg.id, event)
+              }
+              onTouchMove={msg.isUser ? undefined : moveLongPress}
+              onTouchEnd={msg.isUser ? undefined : clearLongPress}
+              onTouchCancel={msg.isUser ? undefined : clearLongPress}
             >
               {!msg.isUser && (
                 <div className="bot-avatar-mini">
@@ -755,6 +817,30 @@ export default function ChatView({
           align-items: center;
           flex-shrink: 0;
           gap: 0;
+          opacity: 0;
+          transform: translateX(-4px);
+          pointer-events: none;
+          transition: opacity 0.16s var(--ease), transform 0.16s var(--ease);
+        }
+        /* Like / reply only appear when the message is hovered (or tabbed to). */
+        .row.ai:hover .actions,
+        .row.ai:focus-within .actions {
+          opacity: 1;
+          transform: none;
+          pointer-events: auto;
+        }
+        /* Long-pressed on a touch screen: keep them open for that message. */
+        .row.actions-open .actions {
+          opacity: 1;
+          transform: none;
+          pointer-events: auto;
+        }
+        @media (hover: none) {
+          /* No hover on touch: the bubble must not pop the copy callout while
+             the press is being held to reveal the actions. */
+          .bubble {
+            -webkit-touch-callout: none;
+          }
         }
         .action {
           width: 32px;
