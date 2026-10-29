@@ -173,7 +173,6 @@ body {
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
 @media (min-width: 640px) {
@@ -256,7 +255,6 @@ textarea,
   flex-direction: column;
   background: var(--bg);
   overflow: hidden;
-  transition: background-color var(--dur) var(--ease);
 }
 
 @media (min-width: 640px) {
@@ -478,6 +476,21 @@ textarea,
   background: var(--glass);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* Theme switch: fade every surface at the same speed for ~0.3s. The class is
+   added by ThemeToggle before `data-theme` flips and removed right after, so
+   hover/entrance animations are untouched outside the switch. */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    transition: background-color 0.3s ease, border-color 0.3s ease,
+      color 0.3s ease, fill 0.3s ease, stroke 0.3s ease,
+      box-shadow 0.3s ease, transform 0.3s ease, opacity 0.3s ease !important;
+    transition-delay: 0s !important;
+  }
 }
 
 /* =========================================================

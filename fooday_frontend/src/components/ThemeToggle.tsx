@@ -5,6 +5,24 @@ import { Sun, Moon } from 'lucide-react';
 
 type Theme = 'light' | 'dark';
 const THEME_EVENT = 'fooday-theme-change';
+const TRANSITION_CLASS = 'theme-switching';
+const TRANSITION_MS = 360;
+let transitionTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Fade every surface together while the CSS variables swap. Without this,
+ * backgrounds snap instantly while the app frame animates, which reads as
+ * "some places go dark faster than others".
+ */
+function flashThemeTransition() {
+  const root = document.documentElement;
+  root.classList.add(TRANSITION_CLASS);
+  if (transitionTimer) clearTimeout(transitionTimer);
+  transitionTimer = setTimeout(() => {
+    root.classList.remove(TRANSITION_CLASS);
+    transitionTimer = null;
+  }, TRANSITION_MS);
+}
 
 function getSnapshot(): Theme {
   const attr = document.documentElement.getAttribute('data-theme');
@@ -33,6 +51,7 @@ export default function ThemeToggle({ variant = 'plain' }: ThemeToggleProps) {
 
   const toggle = () => {
     const next: Theme = isDark ? 'light' : 'dark';
+    flashThemeTransition();
     document.documentElement.setAttribute('data-theme', next);
     try {
       localStorage.setItem('fooday-theme', next);
