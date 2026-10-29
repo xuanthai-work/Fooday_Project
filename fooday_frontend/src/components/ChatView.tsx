@@ -26,6 +26,8 @@ import EmojiRain from './EmojiRain';
 interface ReplyRef {
   id: string;
   text: string;
+  /** True when replying to one of the user's own messages. */
+  fromUser?: boolean;
 }
 
 interface Message {
@@ -56,9 +58,11 @@ const nextId = () => `m${Date.now().toString(36)}-${messageSeq++}`;
 /** How many earlier turns are sent back so the model keeps the context. */
 const HISTORY_LIMIT = 6;
 
-/** Quote the AI message so the model knows which bubble the user is answering. */
+/** Quote the message so the model knows which bubble the user is answering. */
 const withReplyContext = (text: string, reply: ReplyRef) =>
-  `The user is replying to this message from you: """${reply.text}"""\n\n${text}`;
+  reply.fromUser
+    ? `The user is replying to their own earlier message: """${reply.text}"""\n\n${text}`
+    : `The user is replying to this message from you: """${reply.text}"""\n\n${text}`;
 
 /** The last turns of the conversation, in the shape the backend expects. */
 const buildHistory = (messages: Message[]): ChatHistoryMessage[] =>
@@ -117,6 +121,23 @@ export default function ChatView({
   } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+  // Swipe-to-reply: the bubble follows the finger, the hint fades in near the edge.
+  const [swipe, setSwipe] = useState<{
+    id: string;
+    offset: number;
+    top: number;
+    side: 'left' | 'right';
+    progress: number;
+  } | null>(null);
+  const swipeRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    horizontal: boolean;
+    distance: number;
+    side: 'left' | 'right';
+    top: number;
+  } | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -294,12 +315,12 @@ export default function ChatView({
   };
 
   const startReply = (msg: Message) => {
-    setReplyingTo({ id: msg.id, text: msg.message });
+    setReplyingTo({ id: msg.id, text: msg.message, fromUser: msg.isUser });
     setActionTarget(null);
     inputRef.current?.focus();
   };
 
-  // --- Touch: long-press a bot message to float its actions above it --------
+  // --- Touch: long-press for the action bar, swipe to reply -----------------
   const clearLongPress = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
@@ -308,7 +329,7 @@ export default function ChatView({
     pressOrigin.current = null;
   };
 
-  const startLongPress = (id: string, event: React.TouchEvent) => {
+  const startLongPress = (msg: Message, event: React.TouchEvent) => {
     if (event.touches.length !== 1) return;
     const element = event.currentTarget as HTMLElement;
     clearLongPress();
@@ -318,15 +339,18 @@ export default function ChatView({
       const bubble = element.querySelector<HTMLElement>('.bubble');
       const rect = bubble?.getBoundingClientRect() ?? element.getBoundingClientRect();
       const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 0;
-      const minTop = headerBottom + 8;
       const width = 92;
       const height = 44;
-      const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
-      const top =
-        rect.top - height - 8 >= minTop
-          ? rect.top - height - 8
-          : Math.min(rect.bottom + 8, window.innerHeight - height - 8);
-      setActionTarget({ id, top, left });
+      // AI bubbles get the bar on their bottom-right; the user's own bubbles
+      // mirror it to the bottom-left so it never covers the text.
+      const left = msg.isUser
+        ? Math.max(8, rect.left - width - 8)
+        : Math.min(Math.max(8, rect.right + 8), window.innerWidth - width - 12);
+      const top = Math.min(
+        Math.max(rect.bottom - height, headerBottom + 8),
+        window.innerHeight - height - 12,
+      );
+      setActionTarget({ id: msg.id, top, left });
       longPressTimer.current = null;
     }, 450);
   };
@@ -337,6 +361,58 @@ export default function ChatView({
     const touch = event.touches[0];
     if (Math.hypot(touch.clientX - origin.x, touch.clientY - origin.y) > 10) {
       clearLongPress();
+    }
+  };
+
+  const handleRowTouchStart = (msg: Message, event: React.TouchEvent) => {
+    startLongPress(msg, event);
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const rowRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    swipeRef.current = {
+      id: msg.id,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      horizontal: false,
+      distance: 0,
+      side: msg.isUser ? 'right' : 'left',
+      top: rowRect.top + rowRect.height / 2,
+    };
+  };
+
+  const handleRowTouchMove = (msg: Message, event: React.TouchEvent) => {
+    moveLongPress(event);
+    const start = swipeRef.current;
+    if (!start || start.id !== msg.id || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - start.startX;
+    const dy = touch.clientY - start.startY;
+    if (!start.horizontal) {
+      if (Math.abs(dx) < 12) return;
+      if (Math.abs(dx) <= Math.abs(dy)) return; // a vertical scroll, not a swipe
+      start.horizontal = true;
+      clearLongPress();
+    }
+    // Received messages reply when pulled right; own messages when pulled left.
+    const direction = msg.isUser ? -1 : 1;
+    const distance = Math.max(0, Math.min(72, dx * direction));
+    start.distance = distance;
+    setSwipe({
+      id: msg.id,
+      offset: direction * distance,
+      top: start.top,
+      side: start.side,
+      progress: Math.min(1, distance / 48),
+    });
+  };
+
+  const handleRowTouchEnd = (msg: Message) => {
+    clearLongPress();
+    const start = swipeRef.current;
+    swipeRef.current = null;
+    setSwipe(null);
+    if (start && start.id === msg.id && start.horizontal && start.distance >= 48) {
+      startReply(msg);
     }
   };
 
@@ -401,14 +477,12 @@ export default function ChatView({
               key={msg.id}
               className={`row ${msg.isUser ? 'user' : 'ai'} ${
                 actionTarget?.id === msg.id ? 'is-action-target' : ''
-              }`}
+              } ${swipe?.id === msg.id ? 'is-swiping' : ''}`}
               style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
-              onTouchStart={
-                msg.isUser ? undefined : (event) => startLongPress(msg.id, event)
-              }
-              onTouchMove={msg.isUser ? undefined : moveLongPress}
-              onTouchEnd={msg.isUser ? undefined : clearLongPress}
-              onTouchCancel={msg.isUser ? undefined : clearLongPress}
+              onTouchStart={(event) => handleRowTouchStart(msg, event)}
+              onTouchMove={(event) => handleRowTouchMove(msg, event)}
+              onTouchEnd={() => handleRowTouchEnd(msg)}
+              onTouchCancel={() => handleRowTouchEnd(msg)}
             >
               {!msg.isUser && (
                 <div className="bot-avatar-mini">
@@ -421,13 +495,22 @@ export default function ChatView({
                   />
                 </div>
               )}
-              <div className="row-body">
+              <div
+                className="row-body"
+                style={
+                  swipe?.id === msg.id
+                    ? { transform: `translateX(${swipe.offset}px)` }
+                    : undefined
+                }
+              >
                 <div className="bubble-line">
                   <div className={`bubble-wrap ${msg.liked ? 'liked' : ''}`}>
                     <div className={`bubble ${msg.isUser ? 'user' : 'ai'}`}>
                       {msg.replyTo && (
                         <div className="quote">
-                          <span className="quote-label">{t.chat.botName}</span>
+                          <span className="quote-label">
+                            {msg.replyTo.fromUser ? t.chat.you : t.chat.botName}
+                          </span>
                           <span className="quote-text">{msg.replyTo.text}</span>
                         </div>
                       )}
@@ -552,6 +635,22 @@ export default function ChatView({
         <EmojiRain bursts={bursts} />
       </div>
 
+      {swipe && (
+        <span
+          className="swipe-hint"
+          style={{
+            top: swipe.top - 17,
+            left: swipe.side === 'left' ? 12 : undefined,
+            right: swipe.side === 'right' ? 12 : undefined,
+            opacity: 0.35 + swipe.progress * 0.65,
+            transform: `scale(${0.8 + swipe.progress * 0.2})`,
+          }}
+          aria-hidden="true"
+        >
+          <Reply size={18} />
+        </span>
+      )}
+
       {actionTarget && (
         <div
           className="action-backdrop"
@@ -604,7 +703,11 @@ export default function ChatView({
           <div className="reply-bar">
             <Reply size={16} />
             <div className="reply-copy">
-              <span className="reply-label">{t.chat.replyingTo(t.chat.botName)}</span>
+              <span className="reply-label">
+                {replyingTo.fromUser
+                  ? t.chat.replyingToSelf
+                  : t.chat.replyingTo(t.chat.botName)}
+              </span>
               <span className="reply-snippet">{replyingTo.text}</span>
             </div>
             <button
@@ -770,6 +873,25 @@ export default function ChatView({
           display: flex;
           flex-direction: column;
           min-width: 0;
+          transition: transform 0.18s var(--ease);
+        }
+        /* While the finger drags the bubble there is no spring-back delay. */
+        .row.is-swiping .row-body {
+          transition: none;
+        }
+        .swipe-hint {
+          position: fixed;
+          z-index: 60;
+          width: 34px;
+          height: 34px;
+          display: grid;
+          place-items: center;
+          border-radius: var(--r-full);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          box-shadow: var(--shadow-md);
+          color: var(--primary-strong);
+          pointer-events: none;
         }
         .row.user {
           align-self: flex-end;
@@ -945,9 +1067,12 @@ export default function ChatView({
           .actions {
             display: none;
           }
-          /* The bubble must not pop the copy callout while the press is held. */
+          /* The bubble must not pop the copy callout or select text while the
+             press is held / swiped. */
           .bubble {
             -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
           }
         }
         .action {

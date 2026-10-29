@@ -121,6 +121,8 @@ const vi = {
     unlike: 'Bỏ tim',
     reply: 'Trả lời',
     replyingTo: (name: string) => `Đang trả lời ${name}`,
+    replyingToSelf: 'Đang trả lời chính mình',
+    you: 'Bạn',
     cancelReply: 'Hủy trả lời',
   },
   random: {
@@ -543,6 +545,8 @@ const en: Translation = {
     unlike: 'Remove like',
     reply: 'Reply',
     replyingTo: (name: string) => `Replying to ${name}`,
+    replyingToSelf: 'Replying to yourself',
+    you: 'You',
     cancelReply: 'Cancel reply',
   },
   random: {
