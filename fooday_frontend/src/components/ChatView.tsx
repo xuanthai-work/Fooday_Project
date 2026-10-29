@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
-import { Send, Plus, Heart, Reply, X, Star, MapPin, UtensilsCrossed } from 'lucide-react';
+import { Send, Heart, Reply, X, Star, MapPin, UtensilsCrossed } from 'lucide-react';
 import {
   chatService,
   type ChatHistoryMessage,
@@ -113,14 +113,6 @@ export default function ChatView({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ReplyRef | null>(null);
-  // Messenger-style floating bar, shown above a long-pressed message.
-  const [actionTarget, setActionTarget] = useState<{
-    id: string;
-    top: number;
-    left: number;
-  } | null>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   // Swipe-to-reply: the bubble follows the finger, the hint fades in near the edge.
   const [swipe, setSwipe] = useState<{
     id: string;
@@ -141,7 +133,6 @@ export default function ChatView({
   const [isInputFocused, setIsInputFocused] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
   const focusScrollTimer = useRef<number | null>(null);
   const { favorites } = useFavorites();
   const { foods, byId } = useFoods();
@@ -316,56 +307,11 @@ export default function ChatView({
 
   const startReply = (msg: Message) => {
     setReplyingTo({ id: msg.id, text: msg.message, fromUser: msg.isUser });
-    setActionTarget(null);
     inputRef.current?.focus();
   };
 
-  // --- Touch: long-press for the action bar, swipe to reply -----------------
-  const clearLongPress = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    pressOrigin.current = null;
-  };
-
-  const startLongPress = (msg: Message, event: React.TouchEvent) => {
-    if (event.touches.length !== 1) return;
-    const element = event.currentTarget as HTMLElement;
-    clearLongPress();
-    const touch = event.touches[0];
-    pressOrigin.current = { x: touch.clientX, y: touch.clientY };
-    longPressTimer.current = setTimeout(() => {
-      const bubble = element.querySelector<HTMLElement>('.bubble');
-      const rect = bubble?.getBoundingClientRect() ?? element.getBoundingClientRect();
-      const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 0;
-      const width = 92;
-      const height = 44;
-      // AI bubbles get the bar on their bottom-right; the user's own bubbles
-      // mirror it to the bottom-left so it never covers the text.
-      const left = msg.isUser
-        ? Math.max(8, rect.left - width - 8)
-        : Math.min(Math.max(8, rect.right + 8), window.innerWidth - width - 12);
-      const top = Math.min(
-        Math.max(rect.bottom - height, headerBottom + 8),
-        window.innerHeight - height - 12,
-      );
-      setActionTarget({ id: msg.id, top, left });
-      longPressTimer.current = null;
-    }, 450);
-  };
-
-  const moveLongPress = (event: React.TouchEvent) => {
-    const origin = pressOrigin.current;
-    if (!origin) return;
-    const touch = event.touches[0];
-    if (Math.hypot(touch.clientX - origin.x, touch.clientY - origin.y) > 10) {
-      clearLongPress();
-    }
-  };
-
+  // --- Touch: swipe a message to reply --------------------------------------
   const handleRowTouchStart = (msg: Message, event: React.TouchEvent) => {
-    startLongPress(msg, event);
     if (event.touches.length !== 1) return;
     const touch = event.touches[0];
     const rowRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -381,7 +327,6 @@ export default function ChatView({
   };
 
   const handleRowTouchMove = (msg: Message, event: React.TouchEvent) => {
-    moveLongPress(event);
     const start = swipeRef.current;
     if (!start || start.id !== msg.id || event.touches.length !== 1) return;
     const touch = event.touches[0];
@@ -391,7 +336,6 @@ export default function ChatView({
       if (Math.abs(dx) < 12) return;
       if (Math.abs(dx) <= Math.abs(dy)) return; // a vertical scroll, not a swipe
       start.horizontal = true;
-      clearLongPress();
     }
     // Received messages reply when pulled right; own messages when pulled left.
     const direction = msg.isUser ? -1 : 1;
@@ -407,7 +351,6 @@ export default function ChatView({
   };
 
   const handleRowTouchEnd = (msg: Message) => {
-    clearLongPress();
     const start = swipeRef.current;
     swipeRef.current = null;
     setSwipe(null);
@@ -415,25 +358,6 @@ export default function ChatView({
       startReply(msg);
     }
   };
-
-  useEffect(
-    () => () => {
-      if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    },
-    [],
-  );
-
-  // A touch anywhere else closes the floating bar.
-  useEffect(() => {
-    if (!actionTarget) return;
-    const close = (event: TouchEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('.action-pop')) return;
-      setActionTarget(null);
-    };
-    document.addEventListener('touchstart', close);
-    return () => document.removeEventListener('touchstart', close);
-  }, [actionTarget]);
 
   useEffect(() => {
     if (!initialMessageToSend) return;
@@ -449,7 +373,7 @@ export default function ChatView({
   return (
     <div className="chat animate-fade-in">
       {/* Header */}
-      <header className="chat-header glass" ref={headerRef}>
+      <header className="chat-header glass">
         <div className="avatar">
           <Image
             src="/foodie-avatar.png"
@@ -471,13 +395,13 @@ export default function ChatView({
 
       {/* Messages */}
       <div className="messages-wrap">
-        <div className="messages" onScroll={() => setActionTarget(null)}>
+        <div className="messages" onScroll={() => setSwipe(null)}>
           {messages.map((msg, index) => (
             <div
               key={msg.id}
               className={`row ${msg.isUser ? 'user' : 'ai'} ${
-                actionTarget?.id === msg.id ? 'is-action-target' : ''
-              } ${swipe?.id === msg.id ? 'is-swiping' : ''}`}
+                swipe?.id === msg.id ? 'is-swiping' : ''
+              }`}
               style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
               onTouchStart={(event) => handleRowTouchStart(msg, event)}
               onTouchMove={(event) => handleRowTouchMove(msg, event)}
@@ -651,52 +575,6 @@ export default function ChatView({
         </span>
       )}
 
-      {actionTarget && (
-        <div
-          className="action-backdrop"
-          aria-hidden="true"
-          onClick={() => setActionTarget(null)}
-          onTouchStart={() => setActionTarget(null)}
-        />
-      )}
-
-      {actionTarget &&
-        (() => {
-          const target = messages.find((message) => message.id === actionTarget.id);
-          if (!target) return null;
-          return (
-            <div
-              className="action-pop"
-              style={{ top: actionTarget.top, left: actionTarget.left }}
-              role="toolbar"
-              aria-label={t.chat.messageActions}
-            >
-              <button
-                type="button"
-                className={`action ${target.liked ? 'liked' : ''}`}
-                aria-label={target.liked ? t.chat.unlike : t.chat.like}
-                aria-pressed={target.liked ?? false}
-                title={target.liked ? t.chat.unlike : t.chat.like}
-                onClick={() => {
-                  toggleLike(target.id);
-                  setActionTarget(null);
-                }}
-              >
-                <Heart size={17} fill={target.liked ? 'currentColor' : 'none'} />
-              </button>
-              <button
-                type="button"
-                className="action"
-                aria-label={t.chat.reply}
-                title={t.chat.reply}
-                onClick={() => startReply(target)}
-              >
-                <Reply size={18} />
-              </button>
-            </div>
-          );
-        })()}
-
       {/* Input */}
       <div className={`dock glass ${isInputFocused ? 'chat-composer-focused' : ''}`}>
         {replyingTo && (
@@ -722,13 +600,6 @@ export default function ChatView({
           </div>
         )}
         <div className="composer">
-          <button
-            className="attach"
-            aria-label={t.chat.attach}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <Plus size={20} />
-          </button>
           <input
             ref={inputRef}
             type="text"
@@ -1013,57 +884,8 @@ export default function ChatView({
           transform: none;
           pointer-events: auto;
         }
-        /* Long-pressed on a touch screen: dim everything but the message. */
-        .action-backdrop {
-          position: fixed;
-          inset: 0;
-          z-index: 140;
-          background: rgba(12, 9, 7, 0.55);
-          backdrop-filter: blur(1.5px);
-          -webkit-backdrop-filter: blur(1.5px);
-          animation: actionBackdrop 0.16s var(--ease) both;
-        }
-        @keyframes actionBackdrop {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-        .row.is-action-target {
-          position: relative;
-          z-index: 141;
-        }
-        .action-pop {
-          position: fixed;
-          z-index: 142;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          padding: 5px;
-          border-radius: var(--r-full);
-          background: var(--surface);
-          border: 1px solid var(--border);
-          box-shadow: var(--shadow-lg);
-          animation: actionPop 0.16s var(--ease-out) both;
-        }
-        .action-pop .action {
-          width: 38px;
-          height: 38px;
-        }
-        @keyframes actionPop {
-          from {
-            opacity: 0;
-            transform: translateY(4px) scale(0.92);
-          }
-          to {
-            opacity: 1;
-            transform: none;
-          }
-        }
         @media (hover: none) {
-          /* No hover on touch: only the long-press bar shows the actions. */
+          /* No hover on touch: actions live behind the swipe gesture. */
           .actions {
             display: none;
           }
@@ -1314,24 +1136,6 @@ export default function ChatView({
           0% { transform: scale(0.55); }
           60% { transform: scale(1.16); }
           100% { transform: scale(1); }
-        }
-        .attach {
-          flex-shrink: 0;
-          width: 44px;
-          height: 44px;
-          border-radius: var(--r-full);
-          border: 1px solid var(--border);
-          background: var(--surface-2);
-          color: var(--primary-strong);
-          display: grid;
-          place-items: center;
-          cursor: pointer;
-          transition: transform var(--dur-fast) var(--ease),
-            background var(--dur-fast) var(--ease);
-        }
-        .attach:hover {
-          transform: rotate(90deg);
-          background: var(--primary-soft);
         }
         .input {
           flex: 1;
