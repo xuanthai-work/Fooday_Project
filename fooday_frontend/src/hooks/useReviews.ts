@@ -16,13 +16,19 @@ export interface Review {
   rating: number;
   comment: string;
   image_url: string | null;
+  /** Snapshot of the reviewer's avatar when the review was posted. */
+  avatar_url: string | null;
   created_at: string;
 }
 
 export type ReviewPostResult = 'ok' | 'empty' | 'cooldown' | 'failed';
 
-const COLUMNS = 'id, food_id, user_id, user_name, rating, comment, image_url, created_at';
-/** Older DBs without the optional `image_url` column. */
+const COLUMNS =
+  'id, food_id, user_id, user_name, rating, comment, image_url, avatar_url, created_at';
+/** Older DBs without the optional `avatar_url` column. */
+const COLUMNS_WITHOUT_AVATAR =
+  'id, food_id, user_id, user_name, rating, comment, image_url, created_at';
+/** Older DBs without the optional `image_url` column either. */
 const COLUMNS_BASE = 'id, food_id, user_id, user_name, rating, comment, created_at';
 
 export const REVIEW_COOLDOWN_DAYS = 45;
@@ -62,18 +68,28 @@ export function useReviews(foodId: number) {
     let active = true;
 
     const load = async () => {
-      const full = await supabase
+      type Loaded = { data: unknown; error: { message: string } | null };
+      let result: Loaded = await supabase
         .from('reviews')
         .select(COLUMNS)
         .eq('food_id', foodId)
         .order('created_at', { ascending: false });
-      const result = full.error
-        ? await supabase
-            .from('reviews')
-            .select(COLUMNS_BASE)
-            .eq('food_id', foodId)
-            .order('created_at', { ascending: false })
-        : full;
+      if (result.error && /avatar_url/i.test(result.error.message)) {
+        const attempt = await supabase
+          .from('reviews')
+          .select(COLUMNS_WITHOUT_AVATAR)
+          .eq('food_id', foodId)
+          .order('created_at', { ascending: false });
+        result = { data: attempt.data, error: attempt.error };
+      }
+      if (result.error) {
+        const attempt = await supabase
+          .from('reviews')
+          .select(COLUMNS_BASE)
+          .eq('food_id', foodId)
+          .order('created_at', { ascending: false });
+        result = { data: attempt.data, error: attempt.error };
+      }
       if (!active) return;
       if (!result.error) {
         const rows = (result.data ?? []) as Array<Partial<Review> & Record<string, unknown>>;
@@ -81,6 +97,7 @@ export function useReviews(foodId: number) {
           rows.map((row) => ({
             ...(row as Review),
             image_url: typeof row.image_url === 'string' ? row.image_url : null,
+            avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
           })),
         );
       }
@@ -143,6 +160,8 @@ export function useReviews(foodId: number) {
       const serialized = serializeReviewPhotos(photos);
 
       const userName = user?.email ? user.email.split('@')[0] : t.reviews.guestName;
+      const avatarUrl =
+        (user?.user_metadata?.avatar_url as string | undefined)?.trim() || null;
       const tempId = -Date.now();
       const optimistic: Review = {
         id: tempId,
@@ -152,21 +171,34 @@ export function useReviews(foodId: number) {
         rating,
         comment: text,
         image_url: serialized,
+        avatar_url: avatarUrl,
         created_at: new Date().toISOString(),
       };
 
       // optimistic update; Realtime reconciles afterwards
       setReviews((prev) => [optimistic, ...prev]);
 
-      const payload: Record<string, unknown> = {
+      let payload: Record<string, unknown> = {
         food_id: foodId,
         user_name: userName,
         rating,
         comment: text,
       };
       if (serialized) payload.image_url = serialized;
+      if (avatarUrl) payload.avatar_url = avatarUrl;
 
       let inserted = await supabase.from('reviews').insert(payload).select(COLUMNS).single();
+      if (inserted.error && avatarUrl && /avatar_url/i.test(inserted.error.message)) {
+        // `avatar_url` is not migrated yet — post without the snapshot.
+        const withoutAvatar = { ...payload };
+        delete withoutAvatar.avatar_url;
+        payload = withoutAvatar;
+        inserted = await supabase
+          .from('reviews')
+          .insert(payload)
+          .select(COLUMNS_WITHOUT_AVATAR)
+          .single();
+      }
       if (
         inserted.error &&
         !serialized &&
@@ -174,6 +206,9 @@ export function useReviews(foodId: number) {
         /image_url/i.test(inserted.error.message)
       ) {
         // Database has not been migrated yet; post the text review without the photo column.
+        const withoutImage = { ...payload };
+        delete withoutImage.image_url;
+        payload = withoutImage;
         inserted = await supabase.from('reviews').insert(payload).select(COLUMNS_BASE).single();
       }
 
@@ -187,6 +222,7 @@ export function useReviews(foodId: number) {
       const saved: Review = {
         ...row,
         image_url: row.image_url ?? serialized,
+        avatar_url: row.avatar_url ?? avatarUrl,
       };
       setReviews((prev) => prev.map((r) => (r.id === tempId ? saved : r)));
       setLimitAt(saved.created_at);

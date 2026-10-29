@@ -322,6 +322,10 @@ end $$;
 alter table public.reviews
   add column if not exists image_url text;
 
+-- Ảnh đại diện của người viết tại thời điểm đánh giá.
+alter table public.reviews
+  add column if not exists avatar_url text;
+
 create table if not exists public.review_limits (
   user_id     uuid not null references auth.users (id) on delete cascade,
   food_id     bigint not null references public.foods (id) on delete cascade,

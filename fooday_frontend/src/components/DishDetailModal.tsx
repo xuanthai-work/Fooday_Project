@@ -198,6 +198,7 @@ export default function DishDetailModal({
   // Every outlet of a restaurant shares the same opening hours.
   const displayOpeningTime = currentDish.opening_time || t.detail.noHours;
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'G';
+  const userAvatar = (user?.user_metadata?.avatar_url as string | undefined)?.trim() || '';
 
   // --- Contributors (GitHub-style) -------------------------------------------
   const contributors = useMemo(
@@ -896,7 +897,17 @@ export default function DishDetailModal({
               ) : (
                 <form className="composer" onSubmit={handlePost}>
                   <div className="avatar" aria-hidden="true">
-                    {userInitial}
+                    {userAvatar ? (
+                      <Image
+                        src={userAvatar}
+                        alt=""
+                        fill
+                        sizes="40px"
+                        className="avatar-img"
+                      />
+                    ) : (
+                      userInitial
+                    )}
                   </div>
                   <div className="composer-main">
                     <span className="composer-label">{t.reviews.ratingLabel}</span>
@@ -999,7 +1010,17 @@ export default function DishDetailModal({
                     return (
                       <li key={r.id} className="review-item">
                         <div className="avatar" aria-hidden="true">
-                          {(r.user_name[0] || '?').toUpperCase()}
+                          {r.avatar_url ? (
+                            <Image
+                              src={r.avatar_url}
+                              alt=""
+                              fill
+                              sizes="40px"
+                              className="avatar-img"
+                            />
+                          ) : (
+                            (r.user_name[0] || '?').toUpperCase()
+                          )}
                         </div>
                         <div className="review-body">
                           <div className="review-top">
@@ -2169,6 +2190,8 @@ export default function DishDetailModal({
           border-radius: var(--r-md);
         }
         .avatar {
+          position: relative;
+          overflow: hidden;
           display: grid;
           place-items: center;
           width: 40px;
@@ -2180,6 +2203,9 @@ export default function DishDetailModal({
           font-size: 0.9375rem;
           font-weight: 800;
           text-transform: uppercase;
+        }
+        .avatar-img {
+          object-fit: cover;
         }
         .composer-main {
           flex: 1;
