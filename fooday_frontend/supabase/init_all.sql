@@ -322,16 +322,6 @@ end $$;
 alter table public.reviews
   add column if not exists image_url text;
 
--- Số tiền thực tế người đánh giá đã trả (tùy chọn) — dùng để hiển thị giá thật.
-alter table public.reviews
-  add column if not exists paid_price int4;
-
-alter table public.reviews
-  drop constraint if exists reviews_paid_price_range;
-alter table public.reviews
-  add constraint reviews_paid_price_range
-  check (paid_price is null or (paid_price > 0 and paid_price <= 10000000));
-
 create table if not exists public.review_limits (
   user_id     uuid not null references auth.users (id) on delete cascade,
   food_id     bigint not null references public.foods (id) on delete cascade,

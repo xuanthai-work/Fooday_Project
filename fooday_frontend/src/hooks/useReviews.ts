@@ -16,19 +16,14 @@ export interface Review {
   rating: number;
   comment: string;
   image_url: string | null;
-  /** What the reviewer actually paid, when they chose to say it (VND). */
-  paid_price: number | null;
   created_at: string;
 }
 
 export type ReviewPostResult = 'ok' | 'empty' | 'cooldown' | 'failed';
 
-const COLUMNS = 'id, food_id, user_id, user_name, rating, comment, image_url, paid_price, created_at';
-/** Older DBs without `paid_price`. */
-const COLUMNS_WITHOUT_PAID = 'id, food_id, user_id, user_name, rating, comment, image_url, created_at';
-/** Older DBs without `image_url` either. */
+const COLUMNS = 'id, food_id, user_id, user_name, rating, comment, image_url, created_at';
+/** Older DBs without the optional `image_url` column. */
 const COLUMNS_BASE = 'id, food_id, user_id, user_name, rating, comment, created_at';
-const COLUMN_VARIANTS = [COLUMNS, COLUMNS_WITHOUT_PAID, COLUMNS_BASE];
 
 export const REVIEW_COOLDOWN_DAYS = 45;
 
@@ -67,22 +62,18 @@ export function useReviews(foodId: number) {
     let active = true;
 
     const load = async () => {
-      // Try the full column list, then older schemas missing paid_price/image_url.
-      type Loaded = { data: unknown; error: { message: string } | null };
-      let result: Loaded = await supabase
+      const full = await supabase
         .from('reviews')
         .select(COLUMNS)
         .eq('food_id', foodId)
         .order('created_at', { ascending: false });
-      for (const columns of COLUMN_VARIANTS.slice(1)) {
-        if (!result.error) break;
-        const attempt = await supabase
-          .from('reviews')
-          .select(columns)
-          .eq('food_id', foodId)
-          .order('created_at', { ascending: false });
-        result = { data: attempt.data, error: attempt.error };
-      }
+      const result = full.error
+        ? await supabase
+            .from('reviews')
+            .select(COLUMNS_BASE)
+            .eq('food_id', foodId)
+            .order('created_at', { ascending: false })
+        : full;
       if (!active) return;
       if (!result.error) {
         const rows = (result.data ?? []) as Array<Partial<Review> & Record<string, unknown>>;
@@ -90,8 +81,6 @@ export function useReviews(foodId: number) {
           rows.map((row) => ({
             ...(row as Review),
             image_url: typeof row.image_url === 'string' ? row.image_url : null,
-            paid_price:
-              typeof row.paid_price === 'number' && row.paid_price > 0 ? row.paid_price : null,
           })),
         );
       }
@@ -144,7 +133,6 @@ export function useReviews(foodId: number) {
       rating: number,
       comment: string,
       imageUrl?: string | string[] | null,
-      paidPrice?: number | null,
     ): Promise<ReviewPostResult> => {
       const text = comment.trim();
       if (!text) return 'empty';
@@ -153,10 +141,6 @@ export function useReviews(foodId: number) {
       // One photo -> plain URL, several -> JSON array in the same column.
       const photos = Array.isArray(imageUrl) ? imageUrl : imageUrl ? [imageUrl] : [];
       const serialized = serializeReviewPhotos(photos);
-      const paid =
-        typeof paidPrice === 'number' && Number.isFinite(paidPrice) && paidPrice > 0
-          ? Math.round(paidPrice)
-          : null;
 
       const userName = user?.email ? user.email.split('@')[0] : t.reviews.guestName;
       const tempId = -Date.now();
@@ -168,7 +152,6 @@ export function useReviews(foodId: number) {
         rating,
         comment: text,
         image_url: serialized,
-        paid_price: paid,
         created_at: new Date().toISOString(),
       };
 
@@ -182,19 +165,8 @@ export function useReviews(foodId: number) {
         comment: text,
       };
       if (serialized) payload.image_url = serialized;
-      if (paid) payload.paid_price = paid;
-      const withoutPaid = { ...payload };
-      delete withoutPaid.paid_price;
 
       let inserted = await supabase.from('reviews').insert(payload).select(COLUMNS).single();
-      if (inserted.error && paid && /paid_price/i.test(inserted.error.message)) {
-        // `paid_price` is not migrated yet — post the review without the amount.
-        inserted = await supabase
-          .from('reviews')
-          .insert(withoutPaid)
-          .select(COLUMNS_WITHOUT_PAID)
-          .single();
-      }
       if (
         inserted.error &&
         !serialized &&
@@ -202,7 +174,7 @@ export function useReviews(foodId: number) {
         /image_url/i.test(inserted.error.message)
       ) {
         // Database has not been migrated yet; post the text review without the photo column.
-        inserted = await supabase.from('reviews').insert(withoutPaid).select(COLUMNS_BASE).single();
+        inserted = await supabase.from('reviews').insert(payload).select(COLUMNS_BASE).single();
       }
 
       if (inserted.error || !inserted.data) {
@@ -215,7 +187,6 @@ export function useReviews(foodId: number) {
       const saved: Review = {
         ...row,
         image_url: row.image_url ?? serialized,
-        paid_price: typeof row.paid_price === 'number' ? row.paid_price : paid,
       };
       setReviews((prev) => prev.map((r) => (r.id === tempId ? saved : r)));
       setLimitAt(saved.created_at);

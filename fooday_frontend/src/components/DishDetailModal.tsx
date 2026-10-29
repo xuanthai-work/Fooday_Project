@@ -29,19 +29,10 @@ import { useTranslation } from '@/i18n/LanguageContext';
 import { parseHashtags } from '@/lib/hashtags';
 import { MAX_REVIEW_PHOTOS, parseReviewPhotos } from '@/lib/reviewPhotos';
 import {
-  PRICE_RANGES,
   describePrice,
   estimateDishPrice,
-  expandPriceShorthand,
-  formatPriceInput,
   formatVnd,
-  isRangeRepresentative,
-  parsePriceAmount,
   priceRangeOf,
-  priceRangeValue,
-  priceUnitOf,
-  summarizePrices,
-  type PriceRangeId,
 } from '@/lib/price';
 import {
   distanceToBranch,
@@ -89,9 +80,6 @@ export default function DishDetailModal({
   const [loginHint, setLoginHint] = useState(false);
   const [draftRating, setDraftRating] = useState(5);
   const [comment, setComment] = useState('');
-  const [paidPrice, setPaidPrice] = useState('');
-  const [paidRange, setPaidRange] = useState<PriceRangeId | null>(null);
-  const paidUnit = priceUnitOf(paidPrice);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -123,32 +111,8 @@ export default function DishDetailModal({
   const seededRating = Number(currentDish.rating ?? 0);
   const rating = totalCount > 0 ? averageRating : seededRating;
 
-  // Real prices (what reviewers actually paid) win over the contributor range,
-  // which in turn wins over a rough estimate.
-  const paidSummary = useMemo(
-    () =>
-      summarizePrices(
-        reviews
-          .map((review) => Number(review.paid_price))
-          .filter((value) => Number.isFinite(value)),
-      ),
-    [reviews],
-  );
-  const paidHasRange = useMemo(
-    () => reviews.some((review) => isRangeRepresentative(Number(review.paid_price))),
-    [reviews],
-  );
+  // The contributor price wins over a rough estimate.
   const priceInfo = useMemo(() => {
-    if (paidSummary) {
-      const value =
-        paidSummary.min === paidSummary.max
-          ? formatVnd(paidSummary.min)
-          : `${formatVnd(paidSummary.min)} – ${formatVnd(paidSummary.max)}`;
-      return {
-        value: `${paidHasRange ? '~' : ''}${value}`,
-        note: t.detail.priceFromReviews(paidSummary.count),
-      };
-    }
     const range = priceRangeOf(currentDish.price);
     if (range) {
       return {
@@ -160,7 +124,7 @@ export default function DishDetailModal({
       value: `~${formatVnd(estimateDishPrice(currentDish))}`,
       note: t.detail.priceEstimated,
     };
-  }, [paidSummary, paidHasRange, currentDish, t]);
+  }, [currentDish, t]);
   const images: string[] =
     currentDish.images && currentDish.images.length > 0
       ? currentDish.images
@@ -408,16 +372,11 @@ export default function DishDetailModal({
     if (!comment.trim() || posting || uploading || blockedUntil) return;
     setPosting(true);
     setFormError(null);
-    const parsedPaid = priceRangeValue(paidRange) ?? parsePriceAmount(paidPrice);
-    const paidValue =
-      parsedPaid !== null ? Math.min(parsedPaid, 10_000_000) : null;
-    const result = await addReview(draftRating, comment, photoUrls, paidValue);
+    const result = await addReview(draftRating, comment, photoUrls);
     if (result === 'ok') {
       setComment('');
       setDraftRating(5);
       setPhotoUrls([]);
-      setPaidPrice('');
-      setPaidRange(null);
     } else if (result === 'cooldown') {
       setFormError(t.reviews.cooldown(formatCooldownDate(blockedUntil ?? new Date())));
     } else if (result !== 'empty') {
@@ -966,47 +925,6 @@ export default function DishDetailModal({
                       value={comment}
                       onChange={(e) => setComment(e.target.value)}
                     />
-                    <div className="paid-field">
-                      <label className="paid-label" htmlFor={`review-paid-${currentDish.id}`}>
-                        {t.reviews.paidLabel}
-                      </label>
-                      <div className="paid-ranges" role="group" aria-label={t.reviews.paidLabel}>
-                        {PRICE_RANGES.map((range) => (
-                          <button
-                            type="button"
-                            key={range.id}
-                            className={`paid-range ${paidRange === range.id ? 'active' : ''}`}
-                            aria-pressed={paidRange === range.id}
-                            onClick={() => {
-                              setPaidRange((current) =>
-                                current === range.id ? null : range.id,
-                              );
-                              setPaidPrice('');
-                            }}
-                          >
-                            {t.priceRanges[range.id]}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="paid-input-wrap">
-                        <input
-                          id={`review-paid-${currentDish.id}`}
-                          className="paid-input"
-                          inputMode="numeric"
-                          autoComplete="off"
-                          placeholder={t.reviews.paidPlaceholder}
-                          value={paidPrice}
-                          onChange={(e) => {
-                            setPaidPrice(formatPriceInput(e.target.value));
-                            setPaidRange(null);
-                          }}
-                          onBlur={() => setPaidPrice(expandPriceShorthand(paidPrice))}
-                          aria-label={t.reviews.paidLabel}
-                        />
-                        {paidUnit && <span className="paid-unit">{paidUnit}</span>}
-                      </div>
-                      <span className="paid-hint">{t.reviews.paidHint}</span>
-                    </div>
                     {photoUrls.length > 0 && (
                       <div className="photo-preview-grid">
                         {photoUrls.map((url) => (
@@ -1090,13 +1008,6 @@ export default function DishDetailModal({
                           </div>
                           {stars(r.rating, 13)}
                           <p className="review-text">{r.comment}</p>
-                          {r.paid_price ? (
-                            <span className="review-paid">
-                              {t.reviews.paidAmount(
-                                describePrice(Number(r.paid_price), t.priceRanges),
-                              )}
-                            </span>
-                          ) : null}
                           {photos.length > 0 && (
                             <div className={`review-gallery ${photos.length > 1 ? 'is-grid' : ''}`}>
                               {photos.map((src) => (
@@ -2311,81 +2222,6 @@ export default function DishDetailModal({
           border-color: var(--primary);
           box-shadow: 0 0 0 3px var(--ring);
         }
-        /* Optional "what did you pay?" row inside the review composer. */
-        .paid-field {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-        .paid-label {
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: var(--text-soft);
-        }
-        .paid-ranges {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 5px;
-        }
-        .paid-range {
-          height: 32px;
-          padding: 0 4px;
-          border-radius: var(--r-full);
-          border: 1px solid var(--border);
-          background: var(--surface);
-          color: var(--text-soft);
-          font-family: inherit;
-          font-size: 0.72rem;
-          font-weight: 700;
-          white-space: nowrap;
-          cursor: pointer;
-          transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-            border-color var(--dur-fast) var(--ease);
-        }
-        .paid-range:hover:not(.active) {
-          border-color: var(--primary);
-          color: var(--primary-strong);
-        }
-        .paid-range.active {
-          background: var(--grad-primary);
-          color: var(--primary-contrast);
-          border-color: transparent;
-        }
-        .paid-input {
-          width: 100%;
-          height: 38px;
-          padding: 0 32px 0 10px;
-          border-radius: var(--r-md);
-          border: 1px solid var(--border-strong);
-          background: var(--surface);
-          color: var(--text);
-          font-family: inherit;
-          font-size: 0.8125rem;
-          outline: none;
-          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
-        }
-        .paid-input-wrap {
-          position: relative;
-        }
-        .paid-unit {
-          position: absolute;
-          right: 10px;
-          top: 50%;
-          transform: translateY(-50%);
-          font-size: 0.6875rem;
-          font-weight: 700;
-          color: var(--text-faint);
-          pointer-events: none;
-        }
-        .paid-input:focus {
-          border-color: var(--primary);
-          box-shadow: 0 0 0 3px var(--ring);
-        }
-        .paid-hint {
-          font-size: 0.6875rem;
-          font-weight: 500;
-          color: var(--text-faint);
-        }
         .composer-actions {
           display: flex;
           align-items: center;
@@ -2590,18 +2426,6 @@ export default function DishDetailModal({
           line-height: 1.5;
           margin-top: 4px;
           word-break: break-word;
-        }
-        .review-paid {
-          display: inline-flex;
-          align-items: center;
-          align-self: flex-start;
-          margin-top: 6px;
-          padding: 2px 9px;
-          border-radius: var(--r-full);
-          background: var(--primary-soft);
-          color: var(--primary-strong);
-          font-size: 0.6875rem;
-          font-weight: 700;
         }
         .review-del {
           align-self: flex-start;

@@ -48,26 +48,6 @@ export function priceRangeOf(value: number | null | undefined): PriceRangeId | n
   return null;
 }
 
-export interface PriceSummary {
-  min: number;
-  max: number;
-  median: number;
-  count: number;
-}
-
-/** Min / max / median of the amounts people actually paid. */
-export function summarizePrices(values: readonly number[]): PriceSummary | null {
-  const clean = values.filter((value) => Number.isFinite(value) && value > 0);
-  if (clean.length === 0) return null;
-  const sorted = [...clean].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  const median =
-    sorted.length % 2 === 1
-      ? sorted[middle]
-      : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
-  return { min: sorted[0], max: sorted[sorted.length - 1], median, count: sorted.length };
-}
-
 /** `45000` → `45k`, `1500000` → `1,5tr` — compact enough for cards and chips. */
 export function formatVnd(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -160,8 +140,8 @@ export interface PriceSource {
 }
 
 /**
- * Rough price for places that still have no range/paid price. Only a fallback:
- * the UI always labels it as an estimate.
+ * Rough price for places that still have no price set. Only a fallback: the UI
+ * always labels it as an estimate.
  */
 export function estimateDishPrice(food: PriceSource): number {
   const text = normalize(

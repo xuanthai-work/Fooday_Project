@@ -6,16 +6,12 @@ import {
   ChevronRight,
   Crosshair,
   Dices,
-  Heart,
   Loader2,
   RotateCw,
-  Sparkles,
   Star,
-  Eye,
 } from 'lucide-react';
 import { useFoods, foodHasCategory, FoodCategory, Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
-import { useFavorites } from '@/hooks/useFavorites';
 import { useEmojiRain } from '@/hooks/useEmojiRain';
 import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
@@ -225,7 +221,6 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const { t, lang } = useTranslation();
   const { foods } = useFoods();
   const { ratingOf } = useReviewStats();
-  const { favorites, toggleFavorite } = useFavorites();
   const { bursts, trigger: triggerRain } = useEmojiRain();
   const { enabled: funEnabled } = useFunEffects();
   const { coords } = useUserLocation();
@@ -407,8 +402,11 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
       });
   }, [result, priceTier, coords, coordsRevision, t.branches.mainBranch, ratingOf]);
 
-  const visiblePlaces = placesExpanded ? rankedPlaces : rankedPlaces.slice(0, 3);
   const nearestPlace = rankedPlaces[0] ?? null;
+  // The closest place is promoted into the winner card, so the list below
+  // only carries the remaining restaurants.
+  const otherPlaces = rankedPlaces.slice(1);
+  const visiblePlaces = placesExpanded ? otherPlaces : otherPlaces.slice(0, 3);
   const winnerRating = useMemo(
     () =>
       result
@@ -416,10 +414,6 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         : 0,
     [result, ratingOf],
   );
-  const favoriteTarget = nearestPlace?.food ?? result?.places[0] ?? null;
-  const isFav = favoriteTarget ? favorites.has(favoriteTarget.id) : false;
-  const askRestaurant =
-    nearestPlace?.food.restaurant ?? result?.places[0]?.restaurant ?? '';
 
   return (
     <div className="random animate-fade-in">
@@ -499,30 +493,64 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         <div className="winner-block">
           <p className="winner-congrats">{t.random.congrats}</p>
           <div className="winner-card">
-            <div className="winner-media">
-              <Image
-                src={result.image_url}
-                alt={result.name}
-                fill
-                sizes="120px"
-                className="winner-img"
-                style={{ objectFit: 'cover' }}
-              />
+            <div className="winner-top">
+              <div className="winner-media">
+                <Image
+                  src={result.image_url}
+                  alt={result.name}
+                  fill
+                  sizes="120px"
+                  className="winner-img"
+                  style={{ objectFit: 'cover' }}
+                />
+              </div>
+              <div className="winner-info">
+                <h2 className="winner-name">{result.name}</h2>
+                <p className="winner-place">{t.random.placesCount(result.places.length)}</p>
+                <span className="winner-rating">
+                  <Star size={14} fill="var(--star)" color="var(--star)" />
+                  {winnerRating.toFixed(1)}
+                </span>
+                <span
+                  className="winner-price"
+                  title={result.estimated ? t.random.priceEstimated : undefined}
+                >
+                  {formatGroupPrice(result)}
+                </span>
+              </div>
             </div>
-            <div className="winner-info">
-              <h2 className="winner-name">{result.name}</h2>
-              <p className="winner-place">{t.random.placesCount(result.places.length)}</p>
-              <span className="winner-rating">
-                <Star size={14} fill="var(--star)" color="var(--star)" />
-                {winnerRating.toFixed(1)}
-              </span>
-              <span
-                className="winner-price"
-                title={result.estimated ? t.random.priceEstimated : undefined}
+
+            {nearestPlace && (
+              <button
+                type="button"
+                className="winner-nearest"
+                onClick={() => setSelectedDish(nearestPlace.food)}
               >
-                {formatGroupPrice(result)}
-              </span>
-            </div>
+                <span className="winner-nearest-thumb">
+                  <Image
+                    src={nearestPlace.food.image_url}
+                    alt={nearestPlace.food.restaurant}
+                    fill
+                    sizes="48px"
+                    style={{ objectFit: 'cover' }}
+                  />
+                </span>
+                <span className="winner-nearest-body">
+                  <span className="winner-nearest-name">{nearestPlace.food.restaurant}</span>
+                  <span className="winner-nearest-meta">
+                    <Star size={12} fill="var(--star)" color="var(--star)" />
+                    {nearestPlace.rating.toFixed(1)}
+                    {nearestPlace.distanceKm !== null && (
+                      <span>· {formatDistance(nearestPlace.distanceKm, lang)}</span>
+                    )}
+                    <span className="winner-nearest-price">
+                      {formatFoodPrice(nearestPlace.food)}
+                    </span>
+                  </span>
+                </span>
+                <ChevronRight size={16} className="winner-nearest-chev" />
+              </button>
+            )}
           </div>
 
           <div className="price-block result-price">
@@ -542,6 +570,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             </div>
           </div>
 
+          {(rankedPlaces.length === 0 || otherPlaces.length > 0) && (
           <div className="place-list">
             <div className="place-list-head">
               <span>{t.random.nearestTitle}</span>
@@ -601,45 +630,20 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                     </li>
                   ))}
                 </ul>
-                {rankedPlaces.length > 3 && (
+                {otherPlaces.length > 3 && (
                   <button
                     className="more-places"
                     onClick={() => setPlacesExpanded((value) => !value)}
                   >
                     {placesExpanded
                       ? t.random.showLessPlaces
-                      : t.random.morePlaces(rankedPlaces.length - 3)}
+                      : t.random.morePlaces(otherPlaces.length - 3)}
                   </button>
                 )}
               </>
             )}
           </div>
-
-          <div className="rnd-actions">
-            <button
-              className="act"
-              onClick={() => {
-                const target = nearestPlace?.food ?? result.places[0];
-                if (target) setSelectedDish(target);
-              }}
-            >
-              <Eye size={16} /> {t.random.viewNearest}
-            </button>
-            <button
-              className="act"
-              onClick={() => onNavigateToChat(t.random.askAbout(result.name, askRestaurant))}
-            >
-              <Sparkles size={16} /> {t.random.askAi}
-            </button>
-            <button
-              className={`act ${isFav ? 'is-fav' : ''}`}
-              onClick={() => favoriteTarget && toggleFavorite(favoriteTarget.id)}
-              disabled={!favoriteTarget}
-            >
-              <Heart size={16} fill={isFav ? 'var(--heart)' : 'none'} />
-              {isFav ? t.random.saved : t.random.favorite}
-            </button>
-          </div>
+          )}
         </div>
       )}
 
@@ -998,8 +1002,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         .winner-congrats,
         .winner-card,
         .result-price,
-        .place-list,
-        .rnd-actions {
+        .place-list {
           position: relative;
           z-index: 1;
         }
@@ -1013,14 +1016,20 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         .winner-card {
           width: 100%;
           display: flex;
-          align-items: center;
-          gap: 14px;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 10px;
           padding: 12px;
           border-radius: var(--r-lg);
           background: var(--surface);
           border: 1px solid rgba(234, 179, 8, 0.7);
           box-shadow: 0 0 30px rgba(234, 179, 8, 0.5), var(--shadow-md);
           animation: popIn 0.45s var(--ease);
+        }
+        .winner-top {
+          display: flex;
+          align-items: center;
+          gap: 14px;
         }
         .winner-media {
           position: relative;
@@ -1074,6 +1083,70 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           font-size: 12px;
           font-weight: 800;
           box-shadow: var(--shadow-primary);
+        }
+        /* The closest place lives inside the winner card. */
+        .winner-nearest {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border);
+          background: var(--surface-2);
+          text-align: left;
+          cursor: pointer;
+          transition: border-color var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .winner-nearest:hover {
+          transform: translateY(-1px);
+          border-color: var(--primary);
+          box-shadow: var(--shadow-sm);
+        }
+        .winner-nearest-thumb {
+          position: relative;
+          flex: 0 0 auto;
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          overflow: hidden;
+          background: var(--surface);
+        }
+        .winner-nearest-body {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .winner-nearest-name {
+          font-size: 13px;
+          font-weight: 800;
+          color: var(--text);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .winner-nearest-meta {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 11.5px;
+          color: var(--text-soft);
+        }
+        .winner-nearest-price {
+          margin-left: 2px;
+          padding: 1px 7px;
+          border-radius: var(--r-full);
+          background: rgba(234, 179, 8, 0.16);
+          color: var(--primary-strong);
+          font-size: 11px;
+          font-weight: 800;
+        }
+        .winner-nearest-chev {
+          flex: 0 0 auto;
+          color: var(--text-faint);
         }
         .place-list {
           width: 100%;
@@ -1243,45 +1316,6 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           border-color: var(--primary);
           color: var(--primary-strong);
         }
-        .rnd-actions {
-          display: flex;
-          gap: 8px;
-          width: 100%;
-          margin-top: 14px;
-        }
-        .act {
-          flex: 1;
-          min-width: 0;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          height: 44px;
-          padding: 0 8px;
-          border-radius: var(--r-md);
-          border: 1px solid var(--border-strong);
-          background: var(--surface-2);
-          color: var(--text-soft);
-          font-size: 12.5px;
-          font-weight: 700;
-          text-align: center;
-          cursor: pointer;
-          transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-            transform var(--dur-fast) var(--ease);
-        }
-        .act:hover:not(:disabled) {
-          transform: translateY(-2px);
-          border-color: var(--primary);
-          color: var(--primary-strong);
-        }
-        .act:disabled {
-          opacity: 0.6;
-          cursor: default;
-        }
-        .act.is-fav {
-          color: var(--heart);
-          border-color: var(--heart);
-        }
         .spin-btn {
           margin-top: 18px;
           width: 100%;
@@ -1323,13 +1357,6 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           .winner-media {
             width: 82px;
             height: 82px;
-          }
-          .rnd-actions {
-            flex-wrap: wrap;
-          }
-          .act {
-            flex: 1 1 calc(50% - 4px);
-            font-size: 12px;
           }
           .rnd-chips {
             gap: 7px;

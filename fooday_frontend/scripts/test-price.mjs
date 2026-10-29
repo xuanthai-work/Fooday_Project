@@ -20,7 +20,6 @@ import {
   priceRangeOf,
   priceRangeValue,
   priceUnitOf,
-  summarizePrices,
 } from '../src/lib/price.ts';
 
 let checks = 0;
@@ -54,30 +53,6 @@ check('range boundaries are half-open', () => {
   assert.equal(priceRangeOf(100000), 'from100to200');
   assert.equal(priceRangeOf(200000), 'over200');
   assert.equal(priceRangeOf(9_000_000), 'over200');
-});
-
-check('paid prices summarize to min / max / median', () => {
-  const summary = summarizePrices([45000, 50000, 40000, 60000]);
-  assert.ok(summary);
-  assert.equal(summary.count, 4);
-  assert.equal(summary.min, 40000);
-  assert.equal(summary.max, 60000);
-  assert.equal(summary.median, 47500);
-});
-
-check('an odd number of payments uses the middle value', () => {
-  const summary = summarizePrices([30000, 90000, 50000]);
-  assert.ok(summary);
-  assert.equal(summary.median, 50000);
-});
-
-check('summaries ignore empty and invalid amounts', () => {
-  assert.equal(summarizePrices([]), null);
-  assert.equal(summarizePrices([0, -1, Number.NaN]), null);
-  const summary = summarizePrices([0, 25000, Number.NaN]);
-  assert.ok(summary);
-  assert.equal(summary.count, 1);
-  assert.equal(summary.median, 25000);
 });
 
 check('compact and full price labels read well', () => {
