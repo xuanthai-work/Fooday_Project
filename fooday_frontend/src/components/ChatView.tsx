@@ -109,13 +109,18 @@ export default function ChatView({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ReplyRef | null>(null);
-  // On touch screens the like / reply buttons appear after a long press.
-  const [openActionsId, setOpenActionsId] = useState<string | null>(null);
+  // Messenger-style floating bar, shown above a long-pressed message.
+  const [actionTarget, setActionTarget] = useState<{
+    id: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
   const focusScrollTimer = useRef<number | null>(null);
   const { favorites } = useFavorites();
   const { foods, byId } = useFoods();
@@ -290,11 +295,11 @@ export default function ChatView({
 
   const startReply = (msg: Message) => {
     setReplyingTo({ id: msg.id, text: msg.message });
-    setOpenActionsId(null);
+    setActionTarget(null);
     inputRef.current?.focus();
   };
 
-  // --- Touch: long-press a bot message to reveal its actions ----------------
+  // --- Touch: long-press a bot message to float its actions above it --------
   const clearLongPress = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
@@ -305,11 +310,23 @@ export default function ChatView({
 
   const startLongPress = (id: string, event: React.TouchEvent) => {
     if (event.touches.length !== 1) return;
+    const element = event.currentTarget as HTMLElement;
     clearLongPress();
     const touch = event.touches[0];
     pressOrigin.current = { x: touch.clientX, y: touch.clientY };
     longPressTimer.current = setTimeout(() => {
-      setOpenActionsId(id);
+      const bubble = element.querySelector<HTMLElement>('.bubble');
+      const rect = bubble?.getBoundingClientRect() ?? element.getBoundingClientRect();
+      const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 0;
+      const minTop = headerBottom + 8;
+      const width = 92;
+      const height = 44;
+      const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+      const top =
+        rect.top - height - 8 >= minTop
+          ? rect.top - height - 8
+          : Math.min(rect.bottom + 8, window.innerHeight - height - 8);
+      setActionTarget({ id, top, left });
       longPressTimer.current = null;
     }, 450);
   };
@@ -330,17 +347,17 @@ export default function ChatView({
     [],
   );
 
-  // A touch anywhere else closes the revealed actions.
+  // A touch anywhere else closes the floating bar.
   useEffect(() => {
-    if (!openActionsId) return;
+    if (!actionTarget) return;
     const close = (event: TouchEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest(`[data-msg-id="${openActionsId}"]`)) return;
-      setOpenActionsId(null);
+      if (target?.closest('.action-pop')) return;
+      setActionTarget(null);
     };
     document.addEventListener('touchstart', close);
     return () => document.removeEventListener('touchstart', close);
-  }, [openActionsId]);
+  }, [actionTarget]);
 
   useEffect(() => {
     if (!initialMessageToSend) return;
@@ -356,7 +373,7 @@ export default function ChatView({
   return (
     <div className="chat animate-fade-in">
       {/* Header */}
-      <header className="chat-header glass">
+      <header className="chat-header glass" ref={headerRef}>
         <div className="avatar">
           <Image
             src="/foodie-avatar.png"
@@ -378,13 +395,12 @@ export default function ChatView({
 
       {/* Messages */}
       <div className="messages-wrap">
-        <div className="messages">
+        <div className="messages" onScroll={() => setActionTarget(null)}>
           {messages.map((msg, index) => (
             <div
               key={msg.id}
-              data-msg-id={msg.id}
               className={`row ${msg.isUser ? 'user' : 'ai'} ${
-                openActionsId === msg.id ? 'actions-open' : ''
+                actionTarget?.id === msg.id ? 'is-action-target' : ''
               }`}
               style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
               onTouchStart={
@@ -535,6 +551,52 @@ export default function ChatView({
         </div>
         <EmojiRain bursts={bursts} />
       </div>
+
+      {actionTarget && (
+        <div
+          className="action-backdrop"
+          aria-hidden="true"
+          onClick={() => setActionTarget(null)}
+          onTouchStart={() => setActionTarget(null)}
+        />
+      )}
+
+      {actionTarget &&
+        (() => {
+          const target = messages.find((message) => message.id === actionTarget.id);
+          if (!target) return null;
+          return (
+            <div
+              className="action-pop"
+              style={{ top: actionTarget.top, left: actionTarget.left }}
+              role="toolbar"
+              aria-label={t.chat.messageActions}
+            >
+              <button
+                type="button"
+                className={`action ${target.liked ? 'liked' : ''}`}
+                aria-label={target.liked ? t.chat.unlike : t.chat.like}
+                aria-pressed={target.liked ?? false}
+                title={target.liked ? t.chat.unlike : t.chat.like}
+                onClick={() => {
+                  toggleLike(target.id);
+                  setActionTarget(null);
+                }}
+              >
+                <Heart size={17} fill={target.liked ? 'currentColor' : 'none'} />
+              </button>
+              <button
+                type="button"
+                className="action"
+                aria-label={t.chat.reply}
+                title={t.chat.reply}
+                onClick={() => startReply(target)}
+              >
+                <Reply size={18} />
+              </button>
+            </div>
+          );
+        })()}
 
       {/* Input */}
       <div className={`dock glass ${isInputFocused ? 'chat-composer-focused' : ''}`}>
@@ -829,15 +891,61 @@ export default function ChatView({
           transform: none;
           pointer-events: auto;
         }
-        /* Long-pressed on a touch screen: keep them open for that message. */
-        .row.actions-open .actions {
-          opacity: 1;
-          transform: none;
-          pointer-events: auto;
+        /* Long-pressed on a touch screen: dim everything but the message. */
+        .action-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 140;
+          background: rgba(12, 9, 7, 0.55);
+          backdrop-filter: blur(1.5px);
+          -webkit-backdrop-filter: blur(1.5px);
+          animation: actionBackdrop 0.16s var(--ease) both;
+        }
+        @keyframes actionBackdrop {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        .row.is-action-target {
+          position: relative;
+          z-index: 141;
+        }
+        .action-pop {
+          position: fixed;
+          z-index: 142;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 5px;
+          border-radius: var(--r-full);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          box-shadow: var(--shadow-lg);
+          animation: actionPop 0.16s var(--ease-out) both;
+        }
+        .action-pop .action {
+          width: 38px;
+          height: 38px;
+        }
+        @keyframes actionPop {
+          from {
+            opacity: 0;
+            transform: translateY(4px) scale(0.92);
+          }
+          to {
+            opacity: 1;
+            transform: none;
+          }
         }
         @media (hover: none) {
-          /* No hover on touch: the bubble must not pop the copy callout while
-             the press is being held to reveal the actions. */
+          /* No hover on touch: only the long-press bar shows the actions. */
+          .actions {
+            display: none;
+          }
+          /* The bubble must not pop the copy callout while the press is held. */
           .bubble {
             -webkit-touch-callout: none;
           }
