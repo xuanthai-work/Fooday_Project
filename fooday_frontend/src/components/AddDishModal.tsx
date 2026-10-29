@@ -20,6 +20,8 @@ import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, parseHashtags, serializeHashtags } from '@/lib/hashtags';
 import { isGoogleMapsUrl, extractPlaceId, mapsLinksMatch } from '@/lib/maps';
 import { extractCoordsFromUrl, parseBranches } from '@/lib/geo';
+import { PRICE_RANGES, expandPriceShorthand, formatPriceInput, parsePriceAmount, priceRangeValue, priceUnitOf, type PriceRangeId } from '@/lib/price';
+import { formatOpeningHours, formatTimeDigits, normalizeTime } from '@/lib/openingHours';
 import {
   findBrandMatch,
   isBranchAlreadyExists,
@@ -82,6 +84,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [dishList, setDishList] = useState<string[]>([]);
   const [dishInput, setDishInput] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<FoodCategory[]>(['Foods']);
+  const [priceRange, setPriceRange] = useState<PriceRangeId | null>(null);
+  const [priceInput, setPriceInput] = useState('');
   const [restaurant, setRestaurant] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [address, setAddress] = useState('');
@@ -91,7 +95,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [detectedChain, setDetectedChain] = useState<DetectedChain | null>(null);
   const [showChainModal, setShowChainModal] = useState(false);
   const [savingBranch, setSavingBranch] = useState(false);
-  const [openingTime, setOpeningTime] = useState('');
+  const [openTime, setOpenTime] = useState('');
+  const [closeTime, setCloseTime] = useState('');
   const [reviewNote, setReviewNote] = useState('');
   const [imageList, setImageList] = useState<string[]>([]);
   const [branches, setBranches] = useState<BranchDraft[]>([]);
@@ -391,6 +396,16 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     !busy &&
     !duplicateDish;
 
+  const priceUnit = priceUnitOf(priceInput);
+
+  /** Human labels for the requirements that are still missing. */
+  const missingFields = [
+    dishList.length === 0 && !dishInput.trim() ? t.addDish.missingDish : null,
+    imageList.length === 0 ? t.addDish.missingPhoto : null,
+    !restaurant.trim() ? t.addDish.missingRestaurant : null,
+    !isGoogleMapsUrl(googleMapUrl) ? t.addDish.missingMaps : null,
+  ].filter((label): label is string => Boolean(label));
+
   const toggleCategory = (c: FoodCategory) => {
     // Multi-select: tap to add, tap again to remove — but never empty the list.
     setSelectedCategories((prev) => {
@@ -479,7 +494,22 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit || duplicateDish) return;
+    // A name typed but not committed with Enter / "+" still counts.
+    const pendingDish = dishInput.trim();
+    const finalDishes =
+      pendingDish && !dishList.includes(pendingDish) ? [...dishList, pendingDish] : dishList;
+
+    if (
+      finalDishes.length === 0 ||
+      !restaurant.trim() ||
+      imageList.length === 0 ||
+      !isGoogleMapsUrl(googleMapUrl) ||
+      duplicateDish
+    ) {
+      // Promote the typed dish to a chip so the next tap only fills what's left.
+      if (pendingDish) handleAddDish(pendingDish);
+      return;
+    }
     setBusy(true);
     setError(null);
     const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -513,16 +543,18 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     // of `category`, which keeps carrying the first selection for compat.
     const basePayload = {
       slug,
-      name: dishList[0] ?? '',
+      name: finalDishes[0] ?? '',
       category: selectedCategories[0],
       restaurant: restaurant.trim(),
       rating: 5,
+      // Optional range (or exact amount), stored for the price filter.
+      price: priceRangeValue(priceRange) ?? parsePriceAmount(priceInput),
       image_url: imageList[0] || '',
       images: imageList,
       tag: finalTag || null,
       address: address.trim() || null,
       google_map_url: googleMapUrl.trim(),
-      opening_time: openingTime.trim() || null,
+      opening_time: formatOpeningHours({ open: openTime, close: closeTime }),
       review_note: reviewNote.trim() || null,
       // Only sent when there is something to store.
       ...(cleanBranches.length > 0 ? { branches: cleanBranches } : {}),
@@ -533,7 +565,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     let row: Record<string, unknown> = {
       ...basePayload,
       categories: selectedCategories,
-      dishes: dishList,
+      dishes: finalDishes,
       contributors: initialContributors,
     };
     /** The row minus one column (for databases without that migration). */
@@ -551,12 +583,18 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     if (insErr && /dishes/i.test(insErr.message)) {
       // The `dishes` column is not migrated yet — the joined string in `name`
       // keeps the whole menu readable.
-      row = { ...stripRowField('dishes'), name: dishList.join(', ') };
+      row = { ...stripRowField('dishes'), name: finalDishes.join(', ') };
       ({ error: insErr } = await supabase.from('foods').insert(row));
     }
     if (insErr && /contributors/i.test(insErr.message)) {
       // The `contributors` column is not migrated yet — save without it.
       row = stripRowField('contributors');
+      const retry = await supabase.from('foods').insert(row);
+      insErr = retry.error;
+    }
+    if (insErr && /price/i.test(insErr.message)) {
+      // The `price` column is not migrated yet — the app falls back to estimates.
+      row = stripRowField('price');
       const retry = await supabase.from('foods').insert(row);
       insErr = retry.error;
     }
@@ -729,6 +767,43 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             </div>
           </div>
 
+          {/* Price — five range chips or an exact amount, never both */}
+          <div className="field">
+            <span className="label">{t.addDish.priceLabel}</span>
+            <div className="chips price-chips">
+              {PRICE_RANGES.map((range) => (
+                <button
+                  type="button"
+                  key={range.id}
+                  className={`chip ${priceRange === range.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setPriceRange((current) => (current === range.id ? null : range.id));
+                    setPriceInput('');
+                  }}
+                  aria-pressed={priceRange === range.id}
+                >
+                  {t.priceRanges[range.id]}
+                </button>
+              ))}
+            </div>
+            <div className="price-exact-wrap">
+              <input
+                className="price-exact"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder={t.addDish.priceExactPlaceholder}
+                value={priceInput}
+                onChange={(e) => {
+                  setPriceInput(formatPriceInput(e.target.value));
+                  setPriceRange(null);
+                }}
+                onBlur={() => setPriceInput(expandPriceShorthand(priceInput))}
+                aria-label={t.addDish.priceExactPlaceholder}
+              />
+              {priceUnit && <span className="price-unit">{priceUnit}</span>}
+            </div>
+          </div>
+
           {/* Restaurant */}
           <label className={`field ${isResolvingMap ? 'resolving' : ''}`}>
             <span className="label">{t.addDish.restaurantLabel}</span>
@@ -787,29 +862,49 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             <BranchEditor branches={branches} onChange={setBranches} />
           </div>
 
-          {/* Opening hours & note — one two-column row */}
-          <div className="two-cols-row">
-            <label className="field">
-              <span className="label">{t.addDish.openingTime}</span>
+          {/* Opening hours — type four digits, the field formats to HH:mm */}
+          <div className="field">
+            <span className="label">{t.addDish.openingTime}</span>
+            <div className="hours-row">
               <input
-                value={openingTime}
-                onChange={(e) => setOpeningTime(e.target.value)}
-                placeholder={t.detail.noHours}
-                aria-label={t.addDish.openingTime}
+                className="hours-input"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="08:00"
+                value={openTime}
+                onChange={(e) => setOpenTime(formatTimeDigits(e.target.value))}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={() => setOpenTime(normalizeTime(openTime))}
+                aria-label={t.addDish.openTimeLabel}
               />
-            </label>
-            <label className="field">
-              <span className="label">{t.addDish.reviewNote}</span>
-              <textarea
-                className="note-textarea"
-                value={reviewNote}
-                onChange={(e) => setReviewNote(e.target.value)}
-                rows={1}
-                placeholder={t.addDish.reviewNotePlaceholder}
-                aria-label={t.addDish.reviewNote}
+              <span className="hours-dash" aria-hidden="true">
+                –
+              </span>
+              <input
+                className="hours-input"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="22:00"
+                value={closeTime}
+                onChange={(e) => setCloseTime(formatTimeDigits(e.target.value))}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={() => setCloseTime(normalizeTime(closeTime))}
+                aria-label={t.addDish.closeTimeLabel}
               />
-            </label>
+            </div>
           </div>
+
+          <label className="field">
+            <span className="label">{t.addDish.reviewNote}</span>
+            <textarea
+              className="note-textarea"
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+              rows={1}
+              placeholder={t.addDish.reviewNotePlaceholder}
+              aria-label={t.addDish.reviewNote}
+            />
+          </label>
 
           {duplicateDish && !showDuplicatePopup && (
             <div className="duplicate-inline" role="alert">
@@ -891,11 +986,22 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             </div>
           </div>
 
+          {!canSubmit && !busy && missingFields.length > 0 && (
+            <p className="missing-fields" role="status">
+              {t.addDish.missingPrefix} {missingFields.join(' · ')}
+            </p>
+          )}
+
           <div className="actions">
             <button type="button" className="cancel" onClick={onClose}>
               {t.addDish.cancel}
             </button>
-            <button type="submit" className="submit" disabled={!canSubmit}>
+            <button
+              type="submit"
+              className={`submit ${canSubmit ? '' : 'is-blocked'}`}
+              disabled={busy}
+              aria-disabled={!canSubmit}
+            >
               {busy ? <Loader2 size={18} className="spin" /> : t.addDish.submit}
             </button>
           </div>
@@ -1254,6 +1360,17 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           color: var(--primary-contrast);
           border-color: transparent;
         }
+        /* Five price ranges read better as a 3 + 2 grid on a phone. */
+        .price-chips {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 6px;
+        }
+        .price-chips .chip {
+          flex: none;
+          padding: 8px 2px;
+          font-size: 12.5px;
+        }
         /* Google Maps link + address — one grouped field with a thin divider */
         .label-divider {
           margin: 0 5px;
@@ -1272,17 +1389,77 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           line-height: 1;
           margin: 2px 0;
         }
-        /* Opening hours & note — one two-column row */
-        .two-cols-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
+        /* Opening hours — two HH:mm fields, typed as four digits */
+        .hours-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
-        @media (max-width: 480px) {
-          .two-cols-row {
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-          }
+        .hours-input {
+          flex: 1;
+          min-width: 0;
+          height: 44px;
+          padding: 0 12px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text);
+          font-family: inherit;
+          font-size: 14.5px;
+          font-variant-numeric: tabular-nums;
+          text-align: center;
+          outline: none;
+          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .hours-input:focus {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px var(--ring);
+        }
+        .hours-dash {
+          flex: 0 0 auto;
+          color: var(--text-faint);
+          font-weight: 700;
+        }
+        /* Exact price typed by the contributor (clears the chips on use) */
+        .price-exact-wrap {
+          position: relative;
+        }
+        .price-exact {
+          width: 100%;
+          height: 42px;
+          margin-top: 2px;
+          padding: 0 34px 0 12px;
+          border-radius: var(--r-md);
+          border: 1px solid var(--border-strong);
+          background: var(--surface-2);
+          color: var(--text);
+          font-family: inherit;
+          font-size: 14px;
+          outline: none;
+          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+        }
+        .price-unit {
+          position: absolute;
+          right: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 12.5px;
+          font-weight: 700;
+          color: var(--text-faint);
+          pointer-events: none;
+        }
+        .price-exact:focus {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px var(--ring);
+        }
+        .missing-fields {
+          margin: 2px 0 0;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--primary-strong);
+        }
+        .submit.is-blocked {
+          opacity: 0.55;
         }
         /* TikTok-style hashtag suggestion dropdown */
         .hashtag-wrap {

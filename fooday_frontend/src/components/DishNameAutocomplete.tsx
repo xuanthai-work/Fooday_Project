@@ -256,7 +256,13 @@ export default function DishNameAutocomplete({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onBlur={() => {
+          setOpen(false);
+          // Typing a name and then tapping another field should not lose it.
+          if (onCommit && query) {
+            commit(query);
+          }
+        }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         required={required}

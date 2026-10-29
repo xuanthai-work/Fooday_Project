@@ -7,10 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npm run test:taxonomy && npm run test:reel && npm run test:popularity",
+    "test": "npm run test:taxonomy && npm run test:reel && npm run test:popularity && npm run test:price && npm run test:hours",
     "test:taxonomy": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-taxonomy.mjs",
     "test:reel": "node --experimental-strip-types scripts/test-reel.mjs",
     "test:popularity": "node --experimental-strip-types scripts/test-popularity.mjs",
+    "test:price": "node --experimental-strip-types scripts/test-price.mjs",
+    "test:hours": "node --experimental-strip-types scripts/test-opening-hours.mjs",
     "watch:task": "powershell -ExecutionPolicy Bypass -File ../scripts/watch-and-inject.ps1"
   },
   "dependencies": {

@@ -21,6 +21,7 @@ import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { groupOf, subGroupOf, type DishSubId } from '@/lib/taxonomy';
 import { buildReel, buildSpinReel } from '@/lib/reel';
+import { estimateDishPrice } from '@/lib/price';
 import {
   findNearestBranch,
   formatDistance,
@@ -53,21 +54,7 @@ const normalize = (value: string) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd');
 
-/** Fallback price for dishes whose `price` column is still empty. */
-function estimatePrice(food: Food): number {
-  const text = normalize(`${food.name} ${food.restaurant} ${food.review_note ?? ''} ${food.tag ?? ''}`);
-  const noted = text.match(/(\d{2,3})\s*(k|nghin|ngan|\/ng)\b/);
-  if (noted) {
-    const amount = Number(noted[1]) * 1000;
-    if (amount >= 15000 && amount <= 900000) return amount;
-  }
-  if (/buffet|lau|nuong|bbq|hai san|king bbq|dookki|shogun|manyo|k-pub|k pub/.test(text)) return 249000;
-  if (/kfc|lotteria|mcdonald|burger|popeyes|jollibee|pizza|bon chon|don chicken/.test(text)) return 89000;
-  if (/banh mi|xien|che |xoi|banh duc|tra sua|cafe|ca phe|coffee|snack/.test(text)) return 40000;
-  if (/pho|bun |com |chao|mi |my |hu tieu|banh cuon/.test(text)) return 65000;
-  return 70000;
-}
-
+/** Compact price label: `40k`. */
 function formatPrice(price: number): string {
   if (price >= 1000) {
     const k = price / 1000;
@@ -82,7 +69,7 @@ function priceOf(food: Food): { value: number; estimated: boolean } {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     return { value, estimated: false };
   }
-  return { value: estimatePrice(food), estimated: true };
+  return { value: estimateDishPrice(food), estimated: true };
 }
 
 /** `~40k` = estimated (the place has no price yet), `40k` = real price. */

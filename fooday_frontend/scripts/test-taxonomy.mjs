@@ -94,8 +94,9 @@ if (url && key) {
   }
   console.log(`\nlive catalog: ${rows.length} dishes →`, Object.fromEntries(counts));
   if (unclassified.length > 0) {
-    failed += unclassified.length;
-    console.log(' FAIL  unclassified:', unclassified);
+    // User-added names can be anything ("Ada @ aaaaa"); the app groups unknown
+    // dishes under "Món khác", so this is reported but never fails the build.
+    console.log(' warn  unclassified (shown as "Món khác" in the app):', unclassified);
   }
 } else {
   console.log('\nlive catalog: skipped (no Supabase env)');
