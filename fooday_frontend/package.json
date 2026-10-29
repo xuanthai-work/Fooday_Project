@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "npm run test:taxonomy && npm run test:reel",
     "test:taxonomy": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-taxonomy.mjs",
+    "test:reel": "node --experimental-strip-types scripts/test-reel.mjs",
     "watch:task": "powershell -ExecutionPolicy Bypass -File ../scripts/watch-and-inject.ps1"
   },
   "dependencies": {

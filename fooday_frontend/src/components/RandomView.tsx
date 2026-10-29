@@ -20,6 +20,7 @@ import { useEmojiRain } from '@/hooks/useEmojiRain';
 import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { groupOf, subGroupOf, type DishSubId } from '@/lib/taxonomy';
+import { buildReel, buildSpinReel } from '@/lib/reel';
 import {
   findNearestBranch,
   formatDistance,
@@ -36,17 +37,7 @@ interface RandomViewProps {
 
 type Rarity = 'blue' | 'purple' | 'pink' | 'gold';
 
-const REEL_SIZE = 45;
 const SPIN_MS = 5200;
-
-function buildReel<T>(pool: T[], size = REEL_SIZE): T[] {
-  if (pool.length === 0) return [];
-  const out: T[] = [];
-  while (out.length < size) {
-    out.push(pool[Math.floor(Math.random() * pool.length)]);
-  }
-  return out;
-}
 
 function rarityOf(rating: number): Rarity {
   if (rating >= 4.6) return 'gold';
@@ -327,8 +318,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
 
     const winner = pool[Math.floor(Math.random() * pool.length)];
     const winnerIndex = 32 + Math.floor(Math.random() * 7);
-    const nextReel = buildReel(pool);
-    if (nextReel.length > winnerIndex) nextReel[winnerIndex] = winner;
+    const nextReel = buildSpinReel(pool, winner, winnerIndex);
 
     setResult(null);
     setSelectedDish(null);
