@@ -57,7 +57,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { foods, loading } = useFoods();
   const { ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
-  const { coords } = useUserLocation();
+  const { coords, loading: locating } = useUserLocation();
   const [selectedGroup, setSelectedGroup] = useState<DishGroupId>('all');
   const [selectedSub, setSelectedSub] = useState<DishSubId | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -205,7 +205,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   // "Đồ khô · Bún trộn" reads well, "Buffet · Buffet chay" does not.
   const sectionTitle = (() => {
     if (!selectedSub) {
-      return selectedGroup === 'all' ? t.home.popularPicks : t.home.groups[currentGroup.id];
+      return selectedGroup === 'all' ? t.home.nearMe : t.home.groups[currentGroup.id];
     }
     const groupLabel = t.home.groups[currentGroup.id];
     const subLabel = t.home.subgroups[selectedSub];
@@ -266,23 +266,37 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
     return map;
   }, [foods, coords, coordsRevision, t.branches.mainBranch]);
 
-  const filteredFoods = foods.filter((item) => {
-    const matchesSelection =
-      matchesGroup(item, selectedGroup) && matchesSubGroup(item, selectedGroup, selectedSub);
+  // Nearest first: the grid reads left to right starting from the closest
+  // place. Without GPS (or before permission) the best-rated dishes lead.
+  const filteredFoods = useMemo(() => {
     const q = normalize(searchQuery);
-    const matchesSearch =
-      q === '' ||
-      [
-        item.name,
-        item.restaurant,
-        item.tag,
-        item.address,
-        item.review_note,
-        // Search hits the whole menu: any dish in `dishes` finds the place.
-        (item.dishes ?? []).join(' · '),
-      ].some((field) => field != null && normalize(field).includes(q));
-    return matchesSelection && matchesSearch;
-  });
+    const distanceOf = (item: Food) => branchSummaries.get(item.id)?.distanceKm ?? null;
+    return foods
+      .filter((item) => {
+        const matchesSelection =
+          matchesGroup(item, selectedGroup) && matchesSubGroup(item, selectedGroup, selectedSub);
+        const matchesSearch =
+          q === '' ||
+          [
+            item.name,
+            item.restaurant,
+            item.tag,
+            item.address,
+            item.review_note,
+            // Search hits the whole menu: any dish in `dishes` finds the place.
+            (item.dishes ?? []).join(' · '),
+          ].some((field) => field != null && normalize(field).includes(q));
+        return matchesSelection && matchesSearch;
+      })
+      .sort((a, b) => {
+        const da = distanceOf(a);
+        const db = distanceOf(b);
+        if (da !== null && db !== null) return da - db;
+        if (da !== null) return -1;
+        if (db !== null) return 1;
+        return ratingOf(b.id, b.rating) - ratingOf(a.id, a.rating);
+      });
+  }, [foods, selectedGroup, selectedSub, searchQuery, branchSummaries, ratingOf]);
 
   const trimmedQuery = searchQuery.trim();
 
@@ -396,6 +410,12 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         <h2 className="section-title">{sectionTitle}</h2>
         <span className="section-count">{t.home.dishCount(filteredFoods.length)}</span>
       </div>
+
+      {!coords && !locating && filteredFoods.length > 0 && (
+        <p className="section-hint">
+          <MapPin size={12} /> {t.home.nearMeHint}
+        </p>
+      )}
 
       {/* Grid */}
       {loading ? (
@@ -796,6 +816,15 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           font-size: 0.8125rem;
           color: var(--text-faint);
           font-weight: 500;
+        }
+        .section-hint {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          margin: -6px 0 12px;
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--primary-strong);
         }
         .grid {
           display: grid;
