@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
-import { Search, Heart, Star, Sparkles, MapPin } from 'lucide-react';
+import { Search, Heart, Star, Sparkles, MapPin, ChevronRight } from 'lucide-react';
 import { useFoods, type Food } from '@/hooks/useFoods';
 import { useReviewStats } from '@/hooks/useReviewStats';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -328,9 +328,16 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
       {/* Header */}
       <header className="home-header">
         <div className="title-block">
-          <span className="eyebrow">
+          <button
+            type="button"
+            className="eyebrow eyebrow-button"
+            onClick={() => onNavigateToChat(t.chat.eatTodayPrompt)}
+            aria-label={t.chat.eatTodayPrompt}
+            title={t.chat.eatTodayPrompt}
+          >
             <Sparkles size={13} /> {t.home.eyebrow}
-          </span>
+            <ChevronRight size={12} className="eyebrow-chev" aria-hidden="true" />
+          </button>
           <h1 className="home-title">{t.home.title}</h1>
         </div>
         <div className="header-actions">
@@ -599,6 +606,32 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           font-weight: 600;
           color: var(--primary-strong);
           margin-bottom: 4px;
+        }
+        /* The eyebrow is a shortcut: tapping it asks the AI what to eat today. */
+        .eyebrow-button {
+          border: 0;
+          background: transparent;
+          padding: 3px 7px;
+          margin: -3px -7px 1px;
+          border-radius: var(--r-full);
+          font-family: inherit;
+          cursor: pointer;
+          transition: background var(--dur-fast) var(--ease),
+            transform var(--dur-fast) var(--ease);
+        }
+        .eyebrow-button:hover {
+          background: var(--primary-soft);
+          transform: translateY(-1px);
+        }
+        .eyebrow-button:active {
+          transform: scale(0.97);
+        }
+        .eyebrow-button:focus-visible {
+          outline: 2px solid var(--primary);
+          outline-offset: 2px;
+        }
+        .eyebrow-chev {
+          opacity: 0.72;
         }
         .home-title {
           font-size: clamp(24px, 7.5vw, 30px);
