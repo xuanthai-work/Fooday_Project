@@ -17,7 +17,14 @@ import { useFunEffects } from '@/hooks/useFunEffects';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { groupOf, subGroupOf, type DishSubId } from '@/lib/taxonomy';
 import { buildReel, buildSpinReel } from '@/lib/reel';
-import { estimateDishPrice } from '@/lib/price';
+import {
+  PRICE_SLIDER_MAX,
+  PRICE_SLIDER_STEP,
+  estimateDishPrice,
+  formatSliderPrice,
+  priceToSlider,
+  sliderToPrice,
+} from '@/lib/price';
 import {
   findNearestBranch,
   formatDistance,
@@ -72,26 +79,6 @@ function priceOf(food: Food): { value: number; estimated: boolean } {
 function formatFoodPrice(food: Food): string {
   const { value, estimated } = priceOf(food);
   return `${estimated ? '~' : ''}${formatPrice(value)}`;
-}
-
-type PriceTier = 'all' | 'under30' | '30' | '50' | '199' | '299';
-
-const PRICE_TIERS: { id: PriceTier; labelKey: 'priceAll' | 'priceUnder30' | 'price30' | 'price50' | 'price199' | 'price299' }[] = [
-  { id: 'all', labelKey: 'priceAll' },
-  { id: 'under30', labelKey: 'priceUnder30' },
-  { id: '30', labelKey: 'price30' },
-  { id: '50', labelKey: 'price50' },
-  { id: '199', labelKey: 'price199' },
-  { id: '299', labelKey: 'price299' },
-];
-
-function inPriceTier(price: number, tier: PriceTier): boolean {
-  if (tier === 'all') return true;
-  if (tier === 'under30') return price < 30000;
-  if (tier === '30') return price >= 30000 && price <= 50000;
-  if (tier === '50') return price > 50000 && price <= 199000;
-  if (tier === '199') return price > 199000 && price <= 299000;
-  return price > 299000;
 }
 
 /** The three chips the roulette spins inside: đồ ăn / đồ uống / ăn vặt. */
@@ -225,7 +212,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   const { enabled: funEnabled } = useFunEffects();
   const { coords } = useUserLocation();
   const [kind, setKind] = useState<RandomKind>('Foods');
-  const [priceTier, setPriceTier] = useState<PriceTier>('all');
+  const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [reel, setReel] = useState<DishGroup[]>([]);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<DishGroup | null>(null);
@@ -347,10 +334,10 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
   };
 
   // The price only filters the restaurants of the dish already revealed, so
-  // picking a range never re-spins.
-  const selectPrice = (tier: PriceTier) => {
+  // moving the slider never re-spins.
+  const selectMaxPrice = (value: number | null) => {
     if (spinning) return;
-    setPriceTier(tier);
+    setMaxPrice(value);
     setPlacesExpanded(false);
   };
 
@@ -380,7 +367,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
     if (!result) return [];
     void coordsRevision;
     return result.places
-      .filter((place) => inPriceTier(priceOf(place).value, priceTier))
+      .filter((place) => maxPrice === null || priceOf(place).value <= maxPrice)
       .map((place) => {
         const nearest = findNearestBranch(
           getAllBranches(place, t.branches.mainBranch),
@@ -400,7 +387,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         if (b.distanceKm !== null) return 1;
         return b.rating - a.rating;
       });
-  }, [result, priceTier, coords, coordsRevision, t.branches.mainBranch, ratingOf]);
+  }, [result, maxPrice, coords, coordsRevision, t.branches.mainBranch, ratingOf]);
 
   const nearestPlace = rankedPlaces[0] ?? null;
   // The closest place is promoted into the winner card, so the list below
@@ -554,19 +541,36 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           </div>
 
           <div className="price-block result-price">
-            <span className="price-label">{t.random.priceLabel}</span>
-            <div className="rnd-chips price-chips" role="tablist" aria-label={t.random.priceLabel}>
-              {PRICE_TIERS.map((tier) => (
-                <button
-                  key={tier.id}
-                  className={`chip price-chip ${priceTier === tier.id ? 'active' : ''}`}
-                  onClick={() => selectPrice(tier.id)}
-                  disabled={spinning}
-                  aria-pressed={priceTier === tier.id}
-                >
-                  {t.random[tier.labelKey]}
-                </button>
-              ))}
+            <div className="price-slider-head">
+              <span className="price-label">{t.random.priceLabel}</span>
+              <span className="price-slider-value">
+                {maxPrice === null
+                  ? t.random.priceAll
+                  : `≤ ${formatSliderPrice(maxPrice)}`}
+              </span>
+            </div>
+            <input
+              type="range"
+              className="price-slider"
+              min={0}
+              max={PRICE_SLIDER_MAX}
+              step={PRICE_SLIDER_STEP}
+              value={maxPrice === null ? 0 : priceToSlider(maxPrice)}
+              onChange={(e) => {
+                const raw = Number(e.target.value);
+                selectMaxPrice(raw <= 0 ? null : sliderToPrice(raw));
+              }}
+              aria-label={t.random.priceLabel}
+              aria-valuetext={
+                maxPrice === null ? t.random.priceAll : formatSliderPrice(maxPrice)
+              }
+            />
+            <div className="price-slider-scale" aria-hidden="true">
+              <span>{t.random.priceAll}</span>
+              <span>50k</span>
+              <span>100k</span>
+              <span>200k</span>
+              <span>1m+</span>
             </div>
           </div>
 
@@ -585,7 +589,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
               <div className="places-empty">
                 <p>{t.random.noPriceMatch}</p>
                 <div className="places-empty-actions">
-                  <button className="mini-act" onClick={() => selectPrice('all')}>
+                  <button className="mini-act" onClick={() => selectMaxPrice(null)}>
                     {t.random.showAllPrices}
                   </button>
                   <button className="mini-act" onClick={spinCase}>
@@ -741,7 +745,7 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
         }
         .price-label {
           display: block;
-          margin-bottom: 8px;
+          margin-bottom: 0;
           text-align: center;
           font-size: 0.75rem;
           font-weight: 700;
@@ -749,26 +753,93 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           text-transform: uppercase;
           color: var(--text-faint);
         }
-        .price-chips {
-          display: grid;
-          grid-template-columns: repeat(6, minmax(0, 1fr));
-          gap: 6px;
-          margin-bottom: 0;
-          width: 100%;
-          flex-wrap: nowrap;
+        .price-slider-head {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 8px;
         }
-        .price-chips .price-chip {
+        .price-slider-value {
+          font-size: 0.95rem;
+          font-weight: 800;
+          color: var(--primary-strong);
+          font-variant-numeric: tabular-nums;
+        }
+        /* Volume-style budget slider: light orange left, deep orange right. */
+        .price-slider {
+          -webkit-appearance: none;
+          appearance: none;
           width: 100%;
-          min-width: 0;
-          padding: 8px 4px;
-          font-size: 12px;
-          line-height: 1.15;
-          letter-spacing: -0.01em;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          display: block;
-          text-align: center;
+          height: 8px;
+          margin: 4px 0 2px;
+          border-radius: 999px;
+          background: transparent;
+          outline: none;
+          cursor: pointer;
+        }
+        .price-slider::-webkit-slider-runnable-track {
+          height: 8px;
+          border-radius: 999px;
+          background: linear-gradient(
+            90deg,
+            #ffc79e 0%,
+            #ff9a5c 32%,
+            #ff6b35 62%,
+            #c2410c 84%,
+            #8f2d05 100%
+          );
+        }
+        .price-slider::-moz-range-track {
+          height: 8px;
+          border-radius: 999px;
+          background: linear-gradient(
+            90deg,
+            #ffc79e 0%,
+            #ff9a5c 32%,
+            #ff6b35 62%,
+            #c2410c 84%,
+            #8f2d05 100%
+          );
+        }
+        .price-slider::-moz-range-progress {
+          height: 8px;
+          border-radius: 999px;
+          background: transparent;
+        }
+        .price-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          border: 3px solid var(--primary);
+          background: #fff;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+          cursor: grab;
+        }
+        .price-slider::-webkit-slider-thumb:active {
+          cursor: grabbing;
+        }
+        .price-slider::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          border: 3px solid var(--primary);
+          background: #fff;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+          cursor: grab;
+        }
+        .price-slider:focus-visible {
+          outline: 2px solid var(--primary);
+          outline-offset: 4px;
+        }
+        .price-slider-scale {
+          display: flex;
+          justify-content: space-between;
+          font-size: 10.5px;
+          font-weight: 600;
+          color: var(--text-faint);
         }
         .chip {
           padding: 9px 18px;
@@ -1369,16 +1440,6 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
             align-items: flex-start;
             flex-direction: column;
             gap: 4px;
-          }
-        }
-        @media (max-width: 560px) {
-          /* Six labels never fit on a phone: two readable rows beat truncation. */
-          .price-chips {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-          .price-chips .price-chip {
-            padding: 9px 6px;
-            font-size: 12.5px;
           }
         }
         @keyframes spin {

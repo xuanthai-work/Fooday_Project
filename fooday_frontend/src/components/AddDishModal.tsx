@@ -20,7 +20,14 @@ import { useTranslation } from '@/i18n/LanguageContext';
 import { TRENDING_HASHTAGS, normalizeSingleHashtag, parseHashtags, serializeHashtags } from '@/lib/hashtags';
 import { isGoogleMapsUrl, extractPlaceId, mapsLinksMatch } from '@/lib/maps';
 import { extractCoordsFromUrl, parseBranches } from '@/lib/geo';
-import { PRICE_RANGES, expandPriceShorthand, formatPriceInput, parsePriceAmount, priceRangeValue, priceUnitOf, type PriceRangeId } from '@/lib/price';
+import {
+  PRICE_SLIDER_MAX,
+  PRICE_SLIDER_MIN,
+  PRICE_SLIDER_STEP,
+  formatSliderPrice,
+  priceToSlider,
+  sliderToPrice,
+} from '@/lib/price';
 import { formatOpeningHours, formatTimeDigits, normalizeTime } from '@/lib/openingHours';
 import {
   findBrandMatch,
@@ -84,8 +91,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
   const [dishList, setDishList] = useState<string[]>([]);
   const [dishInput, setDishInput] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<FoodCategory[]>(['Foods']);
-  const [priceRange, setPriceRange] = useState<PriceRangeId | null>(null);
-  const [priceInput, setPriceInput] = useState('');
+  const [priceValue, setPriceValue] = useState<number | null>(null);
   const [restaurant, setRestaurant] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [address, setAddress] = useState('');
@@ -396,7 +402,9 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
     !busy &&
     !duplicateDish;
 
-  const priceUnit = priceUnitOf(priceInput);
+  const priceLabel = priceValue
+    ? formatSliderPrice(priceValue)
+    : t.addDish.priceUnset;
 
   /** Human labels for the requirements that are still missing. */
   const missingFields = [
@@ -547,8 +555,8 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
       category: selectedCategories[0],
       restaurant: restaurant.trim(),
       rating: 5,
-      // Optional range (or exact amount), stored for the price filter.
-      price: priceRangeValue(priceRange) ?? parsePriceAmount(priceInput),
+      // Optional price picked on the slider.
+      price: priceValue,
       image_url: imageList[0] || '',
       images: imageList,
       tag: finalTag || null,
@@ -767,40 +775,38 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
             </div>
           </div>
 
-          {/* Price — five range chips or an exact amount, never both */}
+          {/* Price — volume-style slider, every notch is 10k (10k → 1m+) */}
           <div className="field">
             <span className="label">{t.addDish.priceLabel}</span>
-            <div className="chips price-chips">
-              {PRICE_RANGES.map((range) => (
+            <div className="price-slider-head">
+              <span className="price-slider-value">{priceLabel}</span>
+              {priceValue !== null && (
                 <button
                   type="button"
-                  key={range.id}
-                  className={`chip ${priceRange === range.id ? 'active' : ''}`}
-                  onClick={() => {
-                    setPriceRange((current) => (current === range.id ? null : range.id));
-                    setPriceInput('');
-                  }}
-                  aria-pressed={priceRange === range.id}
+                  className="price-clear"
+                  onClick={() => setPriceValue(null)}
                 >
-                  {t.priceRanges[range.id]}
+                  {t.addDish.priceClear}
                 </button>
-              ))}
+              )}
             </div>
-            <div className="price-exact-wrap">
-              <input
-                className="price-exact"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder={t.addDish.priceExactPlaceholder}
-                value={priceInput}
-                onChange={(e) => {
-                  setPriceInput(formatPriceInput(e.target.value));
-                  setPriceRange(null);
-                }}
-                onBlur={() => setPriceInput(expandPriceShorthand(priceInput))}
-                aria-label={t.addDish.priceExactPlaceholder}
-              />
-              {priceUnit && <span className="price-unit">{priceUnit}</span>}
+            <input
+              type="range"
+              className="price-slider"
+              min={PRICE_SLIDER_MIN}
+              max={PRICE_SLIDER_MAX}
+              step={PRICE_SLIDER_STEP}
+              value={priceToSlider(priceValue)}
+              onChange={(e) => setPriceValue(sliderToPrice(Number(e.target.value)))}
+              aria-label={t.addDish.priceLabel}
+              aria-valuetext={priceLabel}
+            />
+            <div className="price-slider-scale" aria-hidden="true">
+              <span>10k</span>
+              <span>50k</span>
+              <span>100k</span>
+              <span>200k</span>
+              <span>1m+</span>
             </div>
           </div>
 
@@ -1360,16 +1366,107 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           color: var(--primary-contrast);
           border-color: transparent;
         }
-        /* Five price ranges read better as a 3 + 2 grid on a phone. */
-        .price-chips {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 6px;
+        /* Volume-style price slider: brighter on the left, deeper orange right. */
+        .price-slider-head {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 8px;
         }
-        .price-chips .chip {
-          flex: none;
-          padding: 8px 2px;
-          font-size: 12.5px;
+        .price-slider-value {
+          font-size: 1.05rem;
+          font-weight: 800;
+          color: var(--primary-strong);
+          font-variant-numeric: tabular-nums;
+        }
+        .price-clear {
+          border: 0;
+          background: none;
+          padding: 0;
+          color: var(--text-faint);
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          text-decoration: underline;
+        }
+        .price-clear:hover {
+          color: var(--heart);
+        }
+        .price-slider {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 8px;
+          margin: 6px 0 2px;
+          border-radius: 999px;
+          background: transparent;
+          outline: none;
+          cursor: pointer;
+        }
+        /* The band itself: light orange on the left, deep orange on the right. */
+        .price-slider::-webkit-slider-runnable-track {
+          height: 8px;
+          border-radius: 999px;
+          background: linear-gradient(
+            90deg,
+            #ffc79e 0%,
+            #ff9a5c 32%,
+            #ff6b35 62%,
+            #c2410c 84%,
+            #8f2d05 100%
+          );
+        }
+        .price-slider::-moz-range-track {
+          height: 8px;
+          border-radius: 999px;
+          background: linear-gradient(
+            90deg,
+            #ffc79e 0%,
+            #ff9a5c 32%,
+            #ff6b35 62%,
+            #c2410c 84%,
+            #8f2d05 100%
+          );
+        }
+        .price-slider::-moz-range-progress {
+          height: 8px;
+          border-radius: 999px;
+          background: transparent;
+        }
+        .price-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          border: 3px solid var(--primary);
+          background: #fff;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+          cursor: grab;
+        }
+        .price-slider::-webkit-slider-thumb:active {
+          cursor: grabbing;
+        }
+        .price-slider::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          border: 3px solid var(--primary);
+          background: #fff;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+          cursor: grab;
+        }
+        .price-slider:focus-visible {
+          outline: 2px solid var(--primary);
+          outline-offset: 4px;
+        }
+        .price-slider-scale {
+          display: flex;
+          justify-content: space-between;
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--text-faint);
         }
         /* Google Maps link + address — one grouped field with a thin divider */
         .label-divider {
@@ -1419,38 +1516,6 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           flex: 0 0 auto;
           color: var(--text-faint);
           font-weight: 700;
-        }
-        /* Exact price typed by the contributor (clears the chips on use) */
-        .price-exact-wrap {
-          position: relative;
-        }
-        .price-exact {
-          width: 100%;
-          height: 42px;
-          margin-top: 2px;
-          padding: 0 34px 0 12px;
-          border-radius: var(--r-md);
-          border: 1px solid var(--border-strong);
-          background: var(--surface-2);
-          color: var(--text);
-          font-family: inherit;
-          font-size: 14px;
-          outline: none;
-          transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
-        }
-        .price-unit {
-          position: absolute;
-          right: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          font-size: 12.5px;
-          font-weight: 700;
-          color: var(--text-faint);
-          pointer-events: none;
-        }
-        .price-exact:focus {
-          border-color: var(--primary);
-          box-shadow: 0 0 0 3px var(--ring);
         }
         .missing-fields {
           margin: 2px 0 0;

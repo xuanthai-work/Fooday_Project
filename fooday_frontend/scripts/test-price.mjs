@@ -8,18 +8,17 @@
 import assert from 'node:assert/strict';
 import {
   PRICE_RANGES,
+  PRICE_SLIDER_MIN,
   describePrice,
   estimateDishPrice,
-  expandPriceShorthand,
-  formatPriceInput,
+  formatSliderPrice,
   formatVnd,
   formatVndFull,
   isRangeRepresentative,
-  parsePriceAmount,
-  parsePriceInput,
   priceRangeOf,
   priceRangeValue,
-  priceUnitOf,
+  priceToSlider,
+  sliderToPrice,
 } from '../src/lib/price.ts';
 
 let checks = 0;
@@ -72,31 +71,18 @@ check('the fallback estimate recognises common dishes', () => {
   assert.equal(estimateDishPrice({ name: 'Cơm tấm', review_note: 'khoảng 40k' }), 40000);
 });
 
-check('typed prices are grouped and parsed back', () => {
-  assert.equal(formatPriceInput('45000'), '45.000');
-  assert.equal(formatPriceInput('abc12a000'), '12.000');
-  assert.equal(formatPriceInput(''), '');
-  assert.equal(parsePriceInput('45.000'), 45000);
-  assert.equal(parsePriceInput(''), null);
-  assert.equal(parsePriceInput(null), null);
-});
-
-check('short prices are read as thousands', () => {
-  assert.equal(parsePriceAmount('45'), 45000);
-  assert.equal(parsePriceAmount('450'), 450000);
-  assert.equal(parsePriceAmount('45000'), 45000);
-  assert.equal(parsePriceAmount(''), null);
-  assert.equal(expandPriceShorthand('45'), '45.000');
-  assert.equal(expandPriceShorthand('450'), '450.000');
-  assert.equal(expandPriceShorthand('45000'), '45.000');
-  assert.equal(expandPriceShorthand(''), '');
-});
-
-check('the field shows the unit the shorthand will use', () => {
-  assert.equal(priceUnitOf('45'), 'k');
-  assert.equal(priceUnitOf('450'), 'k');
-  assert.equal(priceUnitOf('45000'), 'đ');
-  assert.equal(priceUnitOf(''), '');
+check('the price slider maps VND both ways on 10k notches', () => {
+  assert.equal(priceToSlider(null), PRICE_SLIDER_MIN);
+  assert.equal(priceToSlider(0), PRICE_SLIDER_MIN);
+  assert.equal(priceToSlider(45000), 50);
+  assert.equal(priceToSlider(44000), 40);
+  assert.equal(priceToSlider(1_000_000), 1000);
+  assert.equal(priceToSlider(5_000_000), 1000);
+  assert.equal(sliderToPrice(50), 50000);
+  assert.equal(sliderToPrice(10), 10000);
+  assert.equal(sliderToPrice(9999), 1_000_000);
+  assert.equal(formatSliderPrice(45000), '45k');
+  assert.equal(formatSliderPrice(1_000_000), '1m+');
 });
 
 check('a range is shown as a range, an exact amount as a number', () => {

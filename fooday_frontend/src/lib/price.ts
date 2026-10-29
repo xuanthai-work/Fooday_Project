@@ -65,42 +65,34 @@ export function formatVndFull(value: number): string {
   return `${Math.round(value).toLocaleString('vi-VN')}đ`;
 }
 
-/** Digits typed in a price field → grouped text (`45000` → `45.000`). */
-export function formatPriceInput(raw: string): string {
-  const digits = raw.replace(/[^0-9]/g, '').slice(0, 8);
-  if (!digits) return '';
-  return Number(digits).toLocaleString('vi-VN');
+/** Slider bounds in thousands of VND. */
+export const PRICE_SLIDER_MIN = 10;
+export const PRICE_SLIDER_MAX = 1000;
+/** Every notch is 10k, so the slider reads as price ranges, not single đồng. */
+export const PRICE_SLIDER_STEP = 10;
+
+const clampSlider = (value: number) =>
+  Math.min(PRICE_SLIDER_MAX, Math.max(PRICE_SLIDER_MIN, value));
+
+const snapToStep = (value: number) =>
+  clampSlider(Math.round(value / PRICE_SLIDER_STEP) * PRICE_SLIDER_STEP);
+
+/** VND → slider position (10, 20, … 1000). Empty prices sit on the first notch. */
+export function priceToSlider(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return PRICE_SLIDER_MIN;
+  }
+  return snapToStep(Math.round(value / 1000));
 }
 
-/** Read a price field back into VND, or null when empty/invalid. */
-export function parsePriceInput(value: string | null | undefined): number | null {
-  const digits = (value ?? '').replace(/[^0-9]/g, '');
-  if (!digits) return null;
-  const amount = Number(digits);
-  return Number.isFinite(amount) && amount > 0 ? amount : null;
+/** Slider position → VND, always on a 10k notch. */
+export function sliderToPrice(position: number): number {
+  return clampSlider(Math.round(position / PRICE_SLIDER_STEP) * PRICE_SLIDER_STEP) * 1000;
 }
 
-/**
- * Read a typed price where amounts under 1000 are shorthand for thousands:
- * `45` → 45.000, `450` → 450.000, `45000` → 45.000.
- */
-export function parsePriceAmount(value: string | null | undefined): number | null {
-  const amount = parsePriceInput(value);
-  if (amount === null) return null;
-  return amount < 1000 ? amount * 1000 : amount;
-}
-
-/** `45` → `45.000` — used when the field loses focus. */
-export function expandPriceShorthand(raw: string): string {
-  const amount = parsePriceAmount(raw);
-  return amount === null ? '' : formatPriceInput(String(amount));
-}
-
-/** Suffix shown inside the field: `k` for a shorthand, `đ` for a full amount. */
-export function priceUnitOf(raw: string | null | undefined): '' | 'k' | 'đ' {
-  const amount = parsePriceInput(raw);
-  if (amount === null) return '';
-  return amount < 1000 ? 'k' : 'đ';
+/** `45k` while below one million, `1m+` at the top of the slider. */
+export function formatSliderPrice(value: number): string {
+  return value >= 1_000_000 ? '1m+' : formatVnd(value);
 }
 
 /** True when the stored value is exactly one of the five range representatives. */
