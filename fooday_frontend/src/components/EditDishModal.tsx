@@ -3,7 +3,7 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { User } from '@supabase/supabase-js';
-import { X, Upload, Loader2, Plus } from 'lucide-react';
+import { X, Upload, Loader2, Plus, Clock, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { refreshFoods, Food, FoodCategory, FOOD_CATEGORIES, Contributor, parseContributors } from '@/hooks/useFoods';
@@ -20,7 +20,8 @@ import {
   priceToSlider,
   sliderToPrice,
 } from '@/lib/price';
-import { formatOpeningHours, formatTimeDigits, normalizeTime, parseOpeningHours } from '@/lib/openingHours';
+import { formatOpeningHours, formatTimeAmPm, parseOpeningHours } from '@/lib/openingHours';
+import ClockTimePicker from './ClockTimePicker';
 import DishNameAutocomplete from './DishNameAutocomplete';
 import BranchEditor, { createBranchDraft, type BranchDraft } from './BranchEditor';
 
@@ -127,6 +128,13 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
   // Hours stored as free text that the parser cannot read are kept untouched
   // until the contributor actually edits the time fields.
   const [hoursTouched, setHoursTouched] = useState(false);
+  const [hoursOpen, setHoursOpen] = useState(false);
+  const hoursLabel =
+    openTime || closeTime
+      ? [openTime && formatTimeAmPm(openTime), closeTime && formatTimeAmPm(closeTime)]
+          .filter(Boolean)
+          .join(' – ')
+      : t.addDish.hoursUnset;
   const legacyHoursRef = useRef(
     dish.opening_time && !parseOpeningHours(dish.opening_time).open && !parseOpeningHours(dish.opening_time).close
       ? dish.opening_time
@@ -729,42 +737,22 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
             <BranchEditor branches={branches} onChange={setBranches} />
           </div>
 
-          {/* Opening hours — type four digits, the field formats to HH:mm */}
+          {/* Opening hours — one clock icon opens a single-hand clock */}
           <div className="field">
             <span className="label">{t.editDish.openingTime}</span>
-            <div className="hours-row">
-              <input
-                className="hours-input"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="08:00"
-                value={openTime}
-                onChange={(e) => {
-                  setOpenTime(formatTimeDigits(e.target.value));
-                  setHoursTouched(true);
-                }}
-                onFocus={(e) => e.currentTarget.select()}
-                onBlur={() => setOpenTime(normalizeTime(openTime))}
-                aria-label={t.addDish.openTimeLabel}
-              />
-              <span className="hours-dash" aria-hidden="true">
-                –
+            <button
+              type="button"
+              className="hours-trigger"
+              onClick={() => setHoursOpen(true)}
+              aria-haspopup="dialog"
+              aria-label={t.addDish.hoursTitle}
+            >
+              <Clock size={18} className="hours-trigger-icon" />
+              <span className={`hours-trigger-text ${openTime || closeTime ? '' : 'is-empty'}`}>
+                {hoursLabel}
               </span>
-              <input
-                className="hours-input"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="22:00"
-                value={closeTime}
-                onChange={(e) => {
-                  setCloseTime(formatTimeDigits(e.target.value));
-                  setHoursTouched(true);
-                }}
-                onFocus={(e) => e.currentTarget.select()}
-                onBlur={() => setCloseTime(normalizeTime(closeTime))}
-                aria-label={t.addDish.closeTimeLabel}
-              />
-            </div>
+              <ChevronRight size={16} className="hours-trigger-chev" />
+            </button>
           </div>
 
           <label className="field">
@@ -858,6 +846,19 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           </div>
         </form>
       </div>
+
+      {hoursOpen && (
+        <ClockTimePicker
+          hours={{ open: openTime, close: closeTime }}
+          onSave={(next) => {
+            setOpenTime(next.open);
+            setCloseTime(next.close);
+            setHoursTouched(true);
+            setHoursOpen(false);
+          }}
+          onClose={() => setHoursOpen(false)}
+        />
+      )}
 
       <style jsx>{`
         .overlay {
@@ -1268,36 +1269,50 @@ export default function EditDishModal({ dish, onClose, onUpdated }: EditDishModa
           line-height: 1;
           margin: 2px 0;
         }
-        /* Opening hours — two HH:mm fields, typed as four digits */
-        .hours-row {
+        /* Opening hours — one clock icon opens the picker */
+        .hours-trigger {
+          width: 100%;
+          height: 44px;
           display: flex;
           align-items: center;
-          gap: 8px;
-        }
-        .hours-input {
-          flex: 1;
-          min-width: 0;
-          height: 44px;
+          gap: 10px;
           padding: 0 12px;
           border-radius: var(--r-md);
           border: 1px solid var(--border-strong);
           background: var(--surface-2);
           color: var(--text);
           font-family: inherit;
-          font-size: 14.5px;
-          font-variant-numeric: tabular-nums;
-          text-align: center;
-          outline: none;
+          font-size: 14px;
+          text-align: left;
+          cursor: pointer;
           transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
         }
-        .hours-input:focus {
+        .hours-trigger:hover {
           border-color: var(--primary);
-          box-shadow: 0 0 0 3px var(--ring);
         }
-        .hours-dash {
+        .hours-trigger:focus-visible {
+          outline: 2px solid var(--primary);
+          outline-offset: 2px;
+        }
+        .hours-trigger-icon {
+          flex: 0 0 auto;
+          color: var(--primary-strong);
+        }
+        .hours-trigger-text {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          font-weight: 600;
+        }
+        .hours-trigger-text.is-empty {
+          color: var(--text-faint);
+          font-weight: 500;
+        }
+        .hours-trigger-chev {
           flex: 0 0 auto;
           color: var(--text-faint);
-          font-weight: 700;
         }
         /* TikTok-style hashtag suggestion dropdown */
         .hashtag-wrap {

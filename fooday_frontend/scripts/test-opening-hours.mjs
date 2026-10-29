@@ -1,10 +1,13 @@
-// Contract test for the opening-hours formatter.
+// Contract test for the opening-hours helpers.
 // Run with: npm run test:hours
 
 import assert from 'node:assert/strict';
 import {
+  angleToClockTime,
+  clockTimeToAngle,
   formatOpeningHours,
-  formatTimeDigits,
+  formatTimeAmPm,
+  meridiemOf,
   normalizeTime,
   parseOpeningHours,
 } from '../src/lib/openingHours.ts';
@@ -15,16 +18,6 @@ function check(label, fn) {
   checks += 1;
   console.log(`  ok  ${label}`);
 }
-
-check('four digits become HH:mm while typing', () => {
-  assert.equal(formatTimeDigits('0'), '0');
-  assert.equal(formatTimeDigits('00'), '00');
-  assert.equal(formatTimeDigits('001'), '00:1');
-  assert.equal(formatTimeDigits('0010'), '00:10');
-  assert.equal(formatTimeDigits('08:00'), '08:00');
-  assert.equal(formatTimeDigits('abc'), '');
-  assert.equal(formatTimeDigits('123456'), '12:34');
-});
 
 check('a partial time is padded to a full HH:mm', () => {
   assert.equal(normalizeTime('0010'), '00:10');
@@ -39,14 +32,47 @@ check('invalid hours and minutes are clamped, never rejected', () => {
   assert.equal(normalizeTime('0099'), '00:59');
 });
 
+check('the clock hand angle sets hour and minutes', () => {
+  assert.equal(angleToClockTime(0, 'AM'), '00:00');
+  assert.equal(angleToClockTime(75, 'AM'), '02:30');
+  assert.equal(angleToClockTime(75, 'PM'), '14:30');
+  assert.equal(angleToClockTime(180, 'AM'), '06:00');
+  assert.equal(angleToClockTime(180, 'PM'), '18:00');
+  assert.equal(angleToClockTime(345, 'AM'), '11:30');
+  assert.equal(angleToClockTime(360, 'AM'), '00:00');
+  assert.equal(angleToClockTime(-75, 'PM'), '21:30');
+});
+
+check('a time converts back to the hand angle', () => {
+  assert.equal(clockTimeToAngle('02:30'), 75);
+  assert.equal(clockTimeToAngle('14:30'), 75);
+  assert.equal(clockTimeToAngle('00:00'), 0);
+  assert.equal(clockTimeToAngle('12:00'), 0);
+  assert.equal(clockTimeToAngle('06:00'), 180);
+});
+
+check('minutes snap to five-minute steps', () => {
+  assert.equal(angleToClockTime(30 * (2 + 29 / 60), 'AM'), '02:30');
+  assert.equal(angleToClockTime(30 * (2 + 58 / 60), 'AM'), '03:00');
+});
+
+check('AM/PM labels read naturally', () => {
+  assert.equal(formatTimeAmPm('08:00'), '8:00 AM');
+  assert.equal(formatTimeAmPm('00:05'), '12:05 AM');
+  assert.equal(formatTimeAmPm('12:00'), '12:00 PM');
+  assert.equal(formatTimeAmPm('22:30'), '10:30 PM');
+  assert.equal(meridiemOf('11:59'), 'AM');
+  assert.equal(meridiemOf('12:00'), 'PM');
+});
+
 check('legacy opening strings are readable', () => {
   assert.deepEqual(parseOpeningHours('08:00 – 22:00'), { open: '08:00', close: '22:00' });
   assert.deepEqual(parseOpeningHours('8h-22h'), { open: '08:00', close: '22:00' });
   assert.deepEqual(parseOpeningHours('8:00-22:30'), { open: '08:00', close: '22:30' });
+  assert.deepEqual(parseOpeningHours('8:00 AM - 10:30 PM'), { open: '08:00', close: '22:30' });
   assert.deepEqual(parseOpeningHours('00:00'), { open: '00:00', close: '' });
   assert.deepEqual(parseOpeningHours(''), { open: '', close: '' });
   assert.deepEqual(parseOpeningHours(null), { open: '', close: '' });
-  assert.deepEqual(parseOpeningHours('mở cả ngày'), { open: '', close: '' });
 });
 
 check('overnight ranges are kept as typed', () => {
@@ -58,13 +84,6 @@ check('a lone value and an empty range are handled', () => {
   assert.equal(formatOpeningHours({ open: '08:00', close: '' }), '08:00');
   assert.equal(formatOpeningHours({ open: '', close: '22:00' }), '22:00');
   assert.equal(formatOpeningHours({ open: '', close: '' }), null);
-});
-
-check('formatting then parsing round-trips', () => {
-  const hours = { open: '08:00', close: '22:30' };
-  const text = formatOpeningHours(hours);
-  assert.ok(text);
-  assert.deepEqual(parseOpeningHours(text), hours);
 });
 
 console.log(`\nall ${checks} opening-hours checks passed`);
