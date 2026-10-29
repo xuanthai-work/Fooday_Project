@@ -25,6 +25,7 @@ import {
   resolveBranchCoords,
   useUserLocation,
 } from '@/lib/geo';
+import { popularityScore } from '@/lib/popularity';
 import ThemeToggle from './ThemeToggle';
 import DishDetailModal from './DishDetailModal';
 
@@ -42,6 +43,9 @@ const normalize = (str: string) =>
 
 const HOME_FILTER_KEY = 'fooday:home-filter';
 
+/** How the feed is ordered: closest first, or the most reviewed & best rated. */
+type SortMode = 'near' | 'popular';
+
 /** Keeps the selected chip in sight when a row is wider than the screen. */
 function centerChip(bar: HTMLDivElement | null, selector: string) {
   const chip = bar?.querySelector<HTMLElement>(selector);
@@ -55,11 +59,12 @@ function centerChip(bar: HTMLDivElement | null, selector: string) {
 export default function HomeView({ onNavigateToChat }: HomeViewProps) {
   const { t, lang } = useTranslation();
   const { foods, loading } = useFoods();
-  const { ratingOf } = useReviewStats();
+  const { stats, ratingOf } = useReviewStats();
   const { favorites, toggleFavorite } = useFavorites();
   const { coords, loading: locating } = useUserLocation();
   const [selectedGroup, setSelectedGroup] = useState<DishGroupId>('all');
   const [selectedSub, setSelectedSub] = useState<DishSubId | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('near');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDish, setSelectedDish] = useState<Food | null>(null);
   const searchParams = useSearchParams();
@@ -112,11 +117,16 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
     try {
       const raw = window.localStorage.getItem(HOME_FILTER_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { group?: DishGroupId; sub?: DishSubId | null };
+      const saved = JSON.parse(raw) as {
+        group?: DishGroupId;
+        sub?: DishSubId | null;
+        sort?: SortMode;
+      };
       if (!saved.group || !DISH_GROUPS.some((group) => group.id === saved.group)) return;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- restore the saved chip once on mount
       setSelectedGroup(saved.group);
       if (saved.group !== 'all' && saved.sub) setSelectedSub(saved.sub);
+      if (saved.sort === 'near' || saved.sort === 'popular') setSortMode(saved.sort);
     } catch {
       /* private mode or corrupted value — start from "Tất cả" */
     }
@@ -127,12 +137,12 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
     try {
       window.localStorage.setItem(
         HOME_FILTER_KEY,
-        JSON.stringify({ group: selectedGroup, sub: selectedSub }),
+        JSON.stringify({ group: selectedGroup, sub: selectedSub, sort: sortMode }),
       );
     } catch {
       /* storage unavailable — the filter still works for this session */
     }
-  }, [selectedGroup, selectedSub]);
+  }, [selectedGroup, selectedSub, sortMode]);
 
   // Open a dish from anywhere: other views dispatch a custom event, and the
   // AddDishModal duplicate flow uses the `?dish=<id>` query param so the
@@ -202,17 +212,13 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
     setSelectedSub((current) => (current === sub ? null : sub));
   };
 
-  // "Đồ khô · Bún trộn" reads well, "Buffet · Buffet chay" does not.
-  const sectionTitle = (() => {
-    if (!selectedSub) {
-      return selectedGroup === 'all' ? t.home.nearMe : t.home.groups[currentGroup.id];
-    }
-    const groupLabel = t.home.groups[currentGroup.id];
-    const subLabel = t.home.subgroups[selectedSub];
-    return normalize(subLabel).includes(normalize(groupLabel))
-      ? subLabel
-      : `${groupLabel} · ${subLabel}`;
-  })();
+  // The sort switch replaces the old static heading on every section; the
+  // current group/sub is echoed in the count line so context is never lost.
+  const sectionContext = selectedSub
+    ? t.home.subgroups[selectedSub]
+    : selectedGroup !== 'all'
+      ? t.home.groups[selectedGroup]
+      : null;
 
   // With seven branches the selected chip can sit off-screen (e.g. after a
   // restore or when it is picked from the tray) — keep it centered.
@@ -266,11 +272,31 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
     return map;
   }, [foods, coords, coordsRevision, t.branches.mainBranch]);
 
-  // Nearest first: the grid reads left to right starting from the closest
-  // place. Without GPS (or before permission) the best-rated dishes lead.
+  // "Gần tôi" lists the closest place first; "Phổ biến" leads with the dishes
+  // that have both a high rating and plenty of reviews (see lib/popularity).
   const filteredFoods = useMemo(() => {
     const q = normalize(searchQuery);
     const distanceOf = (item: Food) => branchSummaries.get(item.id)?.distanceKm ?? null;
+    const reviewCountOf = (item: Food) => stats[item.id]?.count ?? 0;
+    const scoreOf = (item: Food) =>
+      popularityScore(stats[item.id]?.average ?? item.rating, reviewCountOf(item));
+
+    const byDistance = (a: Food, b: Food) => {
+      const da = distanceOf(a);
+      const db = distanceOf(b);
+      if (da !== null && db !== null) return da - db;
+      if (da !== null) return -1;
+      if (db !== null) return 1;
+      return 0;
+    };
+    const byPopularity = (a: Food, b: Food) => {
+      const diff = scoreOf(b) - scoreOf(a);
+      if (Math.abs(diff) > 1e-9) return diff;
+      const reviews = reviewCountOf(b) - reviewCountOf(a);
+      if (reviews !== 0) return reviews;
+      return byDistance(a, b);
+    };
+
     return foods
       .filter((item) => {
         const matchesSelection =
@@ -289,14 +315,11 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         return matchesSelection && matchesSearch;
       })
       .sort((a, b) => {
-        const da = distanceOf(a);
-        const db = distanceOf(b);
-        if (da !== null && db !== null) return da - db;
-        if (da !== null) return -1;
-        if (db !== null) return 1;
-        return ratingOf(b.id, b.rating) - ratingOf(a.id, a.rating);
+        if (sortMode === 'popular') return byPopularity(a, b);
+        // No GPS yet: distance is unknown everywhere, so popularity leads.
+        return byDistance(a, b) || byPopularity(a, b);
       });
-  }, [foods, selectedGroup, selectedSub, searchQuery, branchSummaries, ratingOf]);
+  }, [foods, selectedGroup, selectedSub, searchQuery, sortMode, branchSummaries, stats]);
 
   const trimmedQuery = searchQuery.trim();
 
@@ -405,13 +428,38 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         </div>
       )}
 
-      {/* Section label */}
+      {/* Order switch — available on every chip, not just "Tất cả" */}
       <div className="section-row">
-        <h2 className="section-title">{sectionTitle}</h2>
-        <span className="section-count">{t.home.dishCount(filteredFoods.length)}</span>
+        <div
+          className={`section-switch ${sortMode === 'popular' ? 'is-popular' : ''}`}
+          role="group"
+          aria-label={t.home.sortLabel}
+        >
+          <span className="switch-thumb" aria-hidden="true" />
+          <button
+            type="button"
+            className={`switch-btn ${sortMode === 'near' ? 'active' : ''}`}
+            aria-pressed={sortMode === 'near'}
+            onClick={() => setSortMode('near')}
+          >
+            {t.home.nearMe}
+          </button>
+          <button
+            type="button"
+            className={`switch-btn ${sortMode === 'popular' ? 'active' : ''}`}
+            aria-pressed={sortMode === 'popular'}
+            onClick={() => setSortMode('popular')}
+          >
+            {t.home.popular}
+          </button>
+        </div>
+        <span className="section-count">
+          {sectionContext && <span className="section-context">{sectionContext} ·</span>}
+          {t.home.dishCount(filteredFoods.length)}
+        </span>
       </div>
 
-      {!coords && !locating && filteredFoods.length > 0 && (
+      {sortMode === 'near' && !coords && !locating && filteredFoods.length > 0 && (
         <p className="section-hint">
           <MapPin size={12} /> {t.home.nearMeHint}
         </p>
@@ -425,7 +473,7 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
           ))}
         </div>
       ) : filteredFoods.length > 0 ? (
-        <div className="grid">
+        <div className="grid" key={sortMode}>
           {filteredFoods.map((item, index) => {
             const isFav = favorites.has(item.id);
             const branchSummary = branchSummaries.get(item.id);
@@ -803,19 +851,73 @@ export default function HomeView({ onNavigateToChat }: HomeViewProps) {
         }
         .section-row {
           display: flex;
-          align-items: baseline;
+          align-items: center;
           justify-content: space-between;
           margin-bottom: 14px;
         }
-        .section-title {
-          font-size: clamp(16px, 4.5vw, 18px);
+        .section-switch {
+          position: relative;
+          display: inline-grid;
+          grid-template-columns: 1fr 1fr;
+          align-items: center;
+          padding: 4px;
+          border-radius: var(--r-full);
+          flex-shrink: 0;
+        }
+        .switch-thumb {
+          position: absolute;
+          top: 4px;
+          bottom: 4px;
+          left: 4px;
+          width: calc(50% - 4px);
+          border-radius: var(--r-full);
+          background: var(--grad-primary);
+          box-shadow: var(--shadow-primary);
+          transition: transform var(--dur-fast) var(--ease);
+        }
+        .section-switch.is-popular .switch-thumb {
+          transform: translateX(100%);
+        }
+        .switch-btn {
+          position: relative;
+          z-index: 1;
+          padding: 6px 14px;
+          border: 0;
+          border-radius: var(--r-full);
+          background: transparent;
+          color: var(--text-faint);
+          font-family: inherit;
+          font-size: clamp(14px, 3.9vw, 16px);
           font-weight: 700;
+          line-height: 1.2;
+          white-space: nowrap;
+          cursor: pointer;
+          transition: color var(--dur-fast) var(--ease);
+        }
+        .switch-btn:hover:not(.active) {
           color: var(--text);
         }
+        .switch-btn.active {
+          color: var(--primary-contrast);
+        }
         .section-count {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          min-width: 0;
           font-size: 0.8125rem;
           color: var(--text-faint);
           font-weight: 500;
+          white-space: nowrap;
+        }
+        .section-context {
+          min-width: 0;
+          max-width: 34vw;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: var(--text-soft);
+          font-weight: 600;
         }
         .section-hint {
           display: inline-flex;
