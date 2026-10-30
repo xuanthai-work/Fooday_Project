@@ -23,7 +23,7 @@ export function normalizeTime(raw: string): string {
 }
 
 /** Force a 24h time onto the AM or the PM half of the clock. */
-function applyMeridiem(time: string, meridiem: Meridiem): string {
+export function withMeridiem(time: string, meridiem: Meridiem): string {
   const hour = Number(time.slice(0, 2)) || 0;
   const minute = time.slice(3, 5) || '00';
   const hour12 = hour % 12;
@@ -38,7 +38,7 @@ function timeFromToken(token: string): string {
   if (!digits) return '';
   const time = normalizeTime(digits);
   if (!meridiem) return time;
-  return applyMeridiem(time, meridiem);
+  return withMeridiem(time, meridiem);
 }
 
 /**

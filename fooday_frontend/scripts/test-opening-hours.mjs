@@ -10,6 +10,7 @@ import {
   meridiemOf,
   normalizeTime,
   parseOpeningHours,
+  withMeridiem,
 } from '../src/lib/openingHours.ts';
 
 let checks = 0;
@@ -63,6 +64,13 @@ check('AM/PM labels read naturally', () => {
   assert.equal(formatTimeAmPm('22:30'), '10:30 PM');
   assert.equal(meridiemOf('11:59'), 'AM');
   assert.equal(meridiemOf('12:00'), 'PM');
+});
+
+check('a time can move to the chosen half of the day', () => {
+  assert.equal(withMeridiem('08:00', 'PM'), '20:00');
+  assert.equal(withMeridiem('22:00', 'AM'), '10:00');
+  assert.equal(withMeridiem('00:00', 'PM'), '12:00');
+  assert.equal(withMeridiem('12:00', 'AM'), '00:00');
 });
 
 check('legacy opening strings are readable', () => {
