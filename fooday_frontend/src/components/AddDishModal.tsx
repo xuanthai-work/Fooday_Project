@@ -25,11 +25,10 @@ import {
   PRICE_SLIDER_MIN,
   PRICE_SLIDER_STEP,
   formatSliderPrice,
-  priceToSlider,
-  sliderToPrice,
 } from '@/lib/price';
 import { formatOpeningHours, formatTimeAmPm } from '@/lib/openingHours';
 import ClockTimePicker from './ClockTimePicker';
+import PriceSlider from './PriceSlider';
 import {
   findBrandMatch,
   isBranchAlreadyExists,
@@ -799,16 +798,14 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
                 </button>
               )}
             </div>
-            <input
-              type="range"
-              className="price-slider"
-              min={PRICE_SLIDER_MIN}
-              max={PRICE_SLIDER_MAX}
-              step={PRICE_SLIDER_STEP}
-              value={priceToSlider(priceValue)}
-              onChange={(e) => setPriceValue(sliderToPrice(Number(e.target.value)))}
-              aria-label={t.addDish.priceLabel}
-              aria-valuetext={priceLabel}
+            <PriceSlider
+              value={priceValue ?? PRICE_SLIDER_MIN * 1000}
+              min={PRICE_SLIDER_MIN * 1000}
+              max={PRICE_SLIDER_MAX * 1000}
+              step={PRICE_SLIDER_STEP * 1000}
+              onChange={setPriceValue}
+              ariaLabel={t.addDish.priceLabel}
+              ariaValueText={priceLabel}
             />
             <div className="price-slider-scale" aria-hidden="true">
               <span>10k</span>
@@ -1399,78 +1396,6 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
         }
         .price-clear:hover {
           color: var(--heart);
-        }
-        .price-slider {
-          -webkit-appearance: none;
-          appearance: none;
-          box-sizing: border-box;
-          width: 100%;
-          height: 8px;
-          padding: 0 11px;
-          margin: 6px 0 2px;
-          border-radius: 999px;
-          background: transparent;
-          outline: none;
-          cursor: pointer;
-        }
-        /* The band itself: light orange on the left, deep orange on the right. */
-        .price-slider::-webkit-slider-runnable-track {
-          height: 8px;
-          border-radius: 999px;
-          background: linear-gradient(
-            90deg,
-            #ffc79e 0%,
-            #ff9a5c 32%,
-            #ff6b35 62%,
-            #c2410c 84%,
-            #8f2d05 100%
-          );
-        }
-        .price-slider::-moz-range-track {
-          height: 8px;
-          border-radius: 999px;
-          background: linear-gradient(
-            90deg,
-            #ffc79e 0%,
-            #ff9a5c 32%,
-            #ff6b35 62%,
-            #c2410c 84%,
-            #8f2d05 100%
-          );
-        }
-        .price-slider::-moz-range-progress {
-          height: 8px;
-          border-radius: 999px;
-          background: transparent;
-        }
-        .price-slider::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          box-sizing: border-box;
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          border: 3px solid var(--primary);
-          background: #fff;
-          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
-          cursor: grab;
-        }
-        .price-slider::-webkit-slider-thumb:active {
-          cursor: grabbing;
-        }
-        .price-slider::-moz-range-thumb {
-          box-sizing: border-box;
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          border: 3px solid var(--primary);
-          background: #fff;
-          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
-          cursor: grab;
-        }
-        .price-slider:focus-visible {
-          outline: 2px solid var(--primary);
-          outline-offset: 4px;
         }
         .price-slider-scale {
           display: flex;

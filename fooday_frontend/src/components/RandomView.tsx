@@ -22,8 +22,6 @@ import {
   PRICE_SLIDER_STEP,
   estimateDishPrice,
   formatSliderPrice,
-  priceToSlider,
-  sliderToPrice,
 } from '@/lib/price';
 import {
   findNearestBranch,
@@ -34,6 +32,7 @@ import {
 } from '@/lib/geo';
 import DishDetailModal from './DishDetailModal';
 import EmojiRain from './EmojiRain';
+import PriceSlider from './PriceSlider';
 
 interface RandomViewProps {
   onNavigateToChat: (initialMsg?: string) => void;
@@ -549,19 +548,14 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
                   : `≤ ${formatSliderPrice(maxPrice)}`}
               </span>
             </div>
-            <input
-              type="range"
-              className="price-slider"
+            <PriceSlider
+              value={maxPrice ?? 0}
               min={0}
-              max={PRICE_SLIDER_MAX}
-              step={PRICE_SLIDER_STEP}
-              value={maxPrice === null ? 0 : priceToSlider(maxPrice)}
-              onChange={(e) => {
-                const raw = Number(e.target.value);
-                selectMaxPrice(raw <= 0 ? null : sliderToPrice(raw));
-              }}
-              aria-label={t.random.priceLabel}
-              aria-valuetext={
+              max={PRICE_SLIDER_MAX * 1000}
+              step={PRICE_SLIDER_STEP * 1000}
+              onChange={(value) => selectMaxPrice(value <= 0 ? null : value)}
+              ariaLabel={t.random.priceLabel}
+              ariaValueText={
                 maxPrice === null ? t.random.priceAll : formatSliderPrice(maxPrice)
               }
             />
@@ -767,77 +761,6 @@ export default function RandomView({ onNavigateToChat }: RandomViewProps) {
           font-variant-numeric: tabular-nums;
         }
         /* Volume-style budget slider: light orange left, deep orange right. */
-        .price-slider {
-          -webkit-appearance: none;
-          appearance: none;
-          box-sizing: border-box;
-          width: 100%;
-          height: 8px;
-          padding: 0 11px;
-          margin: 4px 0 2px;
-          border-radius: 999px;
-          background: transparent;
-          outline: none;
-          cursor: pointer;
-        }
-        .price-slider::-webkit-slider-runnable-track {
-          height: 8px;
-          border-radius: 999px;
-          background: linear-gradient(
-            90deg,
-            #ffc79e 0%,
-            #ff9a5c 32%,
-            #ff6b35 62%,
-            #c2410c 84%,
-            #8f2d05 100%
-          );
-        }
-        .price-slider::-moz-range-track {
-          height: 8px;
-          border-radius: 999px;
-          background: linear-gradient(
-            90deg,
-            #ffc79e 0%,
-            #ff9a5c 32%,
-            #ff6b35 62%,
-            #c2410c 84%,
-            #8f2d05 100%
-          );
-        }
-        .price-slider::-moz-range-progress {
-          height: 8px;
-          border-radius: 999px;
-          background: transparent;
-        }
-        .price-slider::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          box-sizing: border-box;
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          border: 3px solid var(--primary);
-          background: #fff;
-          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
-          cursor: grab;
-        }
-        .price-slider::-webkit-slider-thumb:active {
-          cursor: grabbing;
-        }
-        .price-slider::-moz-range-thumb {
-          box-sizing: border-box;
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          border: 3px solid var(--primary);
-          background: #fff;
-          box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
-          cursor: grab;
-        }
-        .price-slider:focus-visible {
-          outline: 2px solid var(--primary);
-          outline-offset: 4px;
-        }
         .price-slider-scale {
           display: flex;
           justify-content: space-between;
