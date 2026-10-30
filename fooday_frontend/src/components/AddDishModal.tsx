@@ -1403,8 +1403,10 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
         .price-slider {
           -webkit-appearance: none;
           appearance: none;
+          box-sizing: border-box;
           width: 100%;
           height: 8px;
+          padding: 0 11px;
           margin: 6px 0 2px;
           border-radius: 999px;
           background: transparent;
@@ -1444,6 +1446,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
         .price-slider::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
+          box-sizing: border-box;
           width: 22px;
           height: 22px;
           border-radius: 50%;
@@ -1456,8 +1459,9 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
           cursor: grabbing;
         }
         .price-slider::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
+          box-sizing: border-box;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
           border: 3px solid var(--primary);
           background: #fff;
