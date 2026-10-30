@@ -26,7 +26,7 @@ import {
   PRICE_SLIDER_STEP,
   formatSliderPrice,
 } from '@/lib/price';
-import { formatOpeningHours, formatTimeAmPm } from '@/lib/openingHours';
+import { formatOpeningHours, formatTimeVietnamese } from '@/lib/openingHours';
 import ClockTimePicker from './ClockTimePicker';
 import PriceSlider from './PriceSlider';
 import {
@@ -409,7 +409,7 @@ export default function AddDishModal({ onClose }: AddDishModalProps) {
 
   const hoursLabel =
     openTime || closeTime
-      ? [openTime && formatTimeAmPm(openTime), closeTime && formatTimeAmPm(closeTime)]
+      ? [openTime && formatTimeVietnamese(openTime), closeTime && formatTimeVietnamese(closeTime)]
           .filter(Boolean)
           .join(' – ')
       : t.addDish.hoursUnset;

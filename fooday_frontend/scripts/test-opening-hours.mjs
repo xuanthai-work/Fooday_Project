@@ -6,7 +6,7 @@ import {
   angleToClockTime,
   clockTimeToAngle,
   formatOpeningHours,
-  formatTimeAmPm,
+  formatTimeVietnamese,
   meridiemOf,
   normalizeTime,
   parseOpeningHours,
@@ -57,11 +57,18 @@ check('minutes snap to five-minute steps', () => {
   assert.equal(angleToClockTime(30 * (2 + 58 / 60), 'AM'), '03:00');
 });
 
-check('AM/PM labels read naturally', () => {
-  assert.equal(formatTimeAmPm('08:00'), '8:00 AM');
-  assert.equal(formatTimeAmPm('00:05'), '12:05 AM');
-  assert.equal(formatTimeAmPm('12:00'), '12:00 PM');
-  assert.equal(formatTimeAmPm('22:30'), '10:30 PM');
+check('Vietnamese time labels cover the special cases', () => {
+  assert.equal(formatTimeVietnamese('00:05'), '12:05 đêm');
+  assert.equal(formatTimeVietnamese('08:00'), '8:00 sáng');
+  assert.equal(formatTimeVietnamese('08:30'), '8:30 sáng');
+  assert.equal(formatTimeVietnamese('11:00'), '11:00 trưa');
+  assert.equal(formatTimeVietnamese('12:00'), '12:00 trưa');
+  assert.equal(formatTimeVietnamese('14:30'), '2:30 chiều');
+  assert.equal(formatTimeVietnamese('17:59'), '5:59 chiều');
+  assert.equal(formatTimeVietnamese('18:00'), '6:00 tối');
+  assert.equal(formatTimeVietnamese('21:59'), '9:59 tối');
+  assert.equal(formatTimeVietnamese('22:00'), '10:00 đêm');
+  assert.equal(formatTimeVietnamese('23:59'), '11:59 đêm');
   assert.equal(meridiemOf('11:59'), 'AM');
   assert.equal(meridiemOf('12:00'), 'PM');
 });

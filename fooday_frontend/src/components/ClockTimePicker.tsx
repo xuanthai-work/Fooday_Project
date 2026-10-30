@@ -7,7 +7,7 @@ import { useTranslation } from '@/i18n/LanguageContext';
 import {
   angleToClockTime,
   clockTimeToAngle,
-  formatTimeAmPm,
+  formatTimeVietnamese,
   meridiemOf,
   withMeridiem,
   type Meridiem,
@@ -79,7 +79,7 @@ export default function ClockTimePicker({ hours, onSave, onClose }: ClockTimePic
   const handAngle = activeTime ? clockTimeToAngle(activeTime) : 0;
   const preview = activeTime
     ? activeMeridiem
-      ? formatTimeAmPm(activeTime)
+      ? formatTimeVietnamese(activeTime)
       : formatWithoutMeridiem(activeTime)
     : '--:--';
   const canSave =

@@ -101,11 +101,17 @@ export function clockTimeToAngle(time: string): number {
   return (hour + minute / 60) * 30;
 }
 
-/** `14:30` → `2:30 PM`; `00:05` → `12:05 AM`. */
-export function formatTimeAmPm(time: string): string {
+/** `14:30` → `2:30 chiều`; `00:05` → `12:05 đêm`; `11:00` → `11:00 trưa`. */
+export function formatTimeVietnamese(time: string): string {
   const hour = Number(time.slice(0, 2)) || 0;
   const minute = time.slice(3, 5) || '00';
-  const meridiem = hour >= 12 ? 'PM' : 'AM';
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${hour12}:${minute} ${meridiem}`;
+  let period: string;
+  if (hour === 0) period = 'đêm';
+  else if (hour < 11) period = 'sáng';
+  else if (hour < 13) period = 'trưa';
+  else if (hour < 18) period = 'chiều';
+  else if (hour < 22) period = 'tối';
+  else period = 'đêm';
+  return `${hour12}:${minute} ${period}`;
 }
